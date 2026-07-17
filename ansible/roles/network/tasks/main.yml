@@ -1,0 +1,9 @@
+---
+- name: Fix up NIC naming inconsistencies
+  ansible.builtin.import_tasks: nic_naming.yml
+
+- name: Configure corosync network
+  ansible.builtin.import_tasks: corosync.yml
+
+- name: Configure storage network
+  ansible.builtin.import_tasks: storage.yml

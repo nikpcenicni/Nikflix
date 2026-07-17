@@ -1,0 +1,36 @@
+---
+# Dissolves the Proxmox cluster entirely - every node in `noble` returns to
+# a standalone install. Destructive to cluster state (corosync config,
+# cluster-wide node listings); each node's own local VM/CT configs are
+# preserved (they live in that node's local pmxcfs database).
+#
+# Requires explicit confirmation so it can't be run by accident:
+#
+#   ansible-playbook playbooks/uncluster.yml -e uncluster_confirm=true
+#
+# Applies one node at a time (serial: 1) with any_errors_fatal: true, so a
+# failure on one node halts before touching the rest - see the cluster.yml
+# incident this mirrors: letting later nodes proceed against unconfirmed
+# state is how you end up with a half-formed cluster.
+
+- name: Confirm destructive operation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Require explicit confirmation
+      ansible.builtin.assert:
+        that: uncluster_confirm | default(false) | bool
+        fail_msg: >-
+          Refusing to uncluster without confirmation. Re-run with:
+          ansible-playbook playbooks/uncluster.yml -e uncluster_confirm=true
+
+- name: Remove all nodes from the Proxmox cluster
+  hosts: noble
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Uncluster this node
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: uncluster.yml

@@ -1,0 +1,6 @@
+---
+- name: Update Proxmox nodes
+  hosts: noble
+  serial: 1
+  roles:
+    - common

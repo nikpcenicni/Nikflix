@@ -1,0 +1,82 @@
+---
+# Follows Proxmox's documented "separate a node without reinstalling"
+# procedure: stop the cluster services, restart pmxcfs in local-only mode
+# to safely remove the corosync config from within /etc/pve, then restart
+# pve-cluster normally so it comes up standalone.
+#
+# Each node's own local VM/CT configs live in that node's local pmxcfs
+# database and are untouched by this - only cluster membership is removed.
+
+- name: Check if node is currently part of a cluster
+  ansible.builtin.stat:
+    path: /etc/pve/corosync.conf
+  register: corosync_conf
+
+- name: Node is already standalone - nothing to do
+  ansible.builtin.debug:
+    msg: "{{ inventory_hostname }} is not part of a cluster."
+  when: not corosync_conf.stat.exists
+
+- name: Stop pve-cluster and corosync services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - pve-cluster
+    - corosync
+  when: corosync_conf.stat.exists
+
+- name: Start pmxcfs in local (standalone) mode
+  ansible.builtin.command: pmxcfs -l
+  when: corosync_conf.stat.exists
+
+- name: Remove corosync configuration and keys
+  ansible.builtin.shell: rm -rf /etc/corosync/*
+  when: corosync_conf.stat.exists
+
+- name: Remove cluster corosync.conf from pmxcfs
+  ansible.builtin.file:
+    path: /etc/pve/corosync.conf
+    state: absent
+  when: corosync_conf.stat.exists
+
+- name: Stop local-mode pmxcfs
+  ansible.builtin.command: killall pmxcfs
+  when: corosync_conf.stat.exists
+
+- name: Wait for pmxcfs to fully exit
+  ansible.builtin.pause:
+    seconds: 2
+  when: corosync_conf.stat.exists
+
+- name: Start pve-cluster in normal (standalone) mode
+  ansible.builtin.service:
+    name: pve-cluster
+    state: started
+  when: corosync_conf.stat.exists
+
+- name: Verify corosync.conf no longer exists
+  ansible.builtin.stat:
+    path: /etc/pve/corosync.conf
+  register: corosync_conf_after
+  when: corosync_conf.stat.exists
+
+- name: Fail if the node did not actually go standalone
+  ansible.builtin.assert:
+    that: not corosync_conf_after.stat.exists
+    fail_msg: >-
+      {{ inventory_hostname }}: /etc/pve/corosync.conf still exists after
+      the uncluster attempt - stop here and investigate manually.
+  when: corosync_conf.stat.exists
+
+# Other nodes' data is replicated into this node's local pmxcfs database
+# while clustered and isn't purged automatically on leaving - clean up the
+# leftover directories so the GUI doesn't show ghost nodes.
+- name: Remove stale peer node directories
+  ansible.builtin.file:
+    path: "/etc/pve/nodes/{{ item }}"
+    state: absent
+  loop: "{{ groups['noble'] }}"
+  when:
+    - corosync_conf.stat.exists
+    - item != inventory_hostname

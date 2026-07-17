@@ -1,0 +1,41 @@
+---
+# Only runs on nodes where pve_nic2_mac_override is set in host_vars (i.e.
+# the installer never created a nic2 naming rule for this node's second
+# 2.5GbE NIC). Installs the same style of .link file the Proxmox installer
+# uses for the other NICs, then renames the interface immediately since
+# it's confirmed unused (not in any bridge) - no need to wait for a reboot.
+
+- name: Deploy persistent nic2 naming rule
+  ansible.builtin.template:
+    src: 50-pmx-nic2.link.j2
+    dest: /usr/local/lib/systemd/network/50-pmx-nic2.link
+    owner: root
+    group: root
+    mode: "0644"
+  when: pve_nic2_mac_override is defined
+
+- name: Find current interface name for pve_nic2_mac_override
+  ansible.builtin.shell: |
+    for i in /sys/class/net/*; do
+      n=$(basename "$i")
+      [ -f "$i/address" ] || continue
+      mac=$(cat "$i/address")
+      if [ "$mac" = "{{ pve_nic2_mac_override | lower }}" ]; then echo "$n"; fi
+    done
+  register: nic2_current_name
+  changed_when: false
+  when: pve_nic2_mac_override is defined
+
+- name: Rename NIC to nic2
+  ansible.builtin.command: "ip link set {{ nic2_current_name.stdout }} down"
+  when:
+    - pve_nic2_mac_override is defined
+    - nic2_current_name.stdout | default('') != ""
+    - nic2_current_name.stdout != "nic2"
+
+- name: Apply the nic2 name
+  ansible.builtin.command: "ip link set {{ nic2_current_name.stdout }} name nic2"
+  when:
+    - pve_nic2_mac_override is defined
+    - nic2_current_name.stdout | default('') != ""
+    - nic2_current_name.stdout != "nic2"

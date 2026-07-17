@@ -1,0 +1,32 @@
+---
+# Forms (or joins) a Proxmox cluster named `pve_cluster_name` out of the
+# noble hosts, using the first host listed in inventory/hosts.yml as
+# the founding node. Safe to re-run: nodes already in that cluster are
+# skipped; a node found in some other cluster fails loudly instead of being
+# touched.
+#
+# Two plays are required: SSH trust must be established on *all* nodes
+# before *any* node attempts to join (so `serial` can't apply here), while
+# the join itself must happen one node at a time, in order (so it must).
+
+- name: Establish inter-node SSH trust for clustering
+  hosts: noble
+  tasks:
+    - name: Set up inter-node SSH trust
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: ssh_trust.yml
+
+- name: Form the Proxmox cluster
+  hosts: noble
+  serial: 1
+  # Without this, a failure on one node (e.g. neon) does not stop Ansible
+  # from moving on to the next batch (argon) - which would then attempt to
+  # join a cluster whose state is unconfirmed. One bad node should halt the
+  # whole play, not let subsequent nodes pile on.
+  any_errors_fatal: true
+  tasks:
+    - name: Create or join the cluster
+      ansible.builtin.import_role:
+        name: cluster
+        tasks_from: join.yml

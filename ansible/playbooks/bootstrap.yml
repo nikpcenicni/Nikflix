@@ -1,0 +1,34 @@
+---
+# Full start-to-finish bootstrap for brand new Proxmox nodes: installs your
+# SSH key (using the current root password, prompted once), then runs
+# update -> harden -> network -> cluster in order, one node at a time.
+#
+# First run, against fresh nodes with only password auth:
+#   ansible-playbook playbooks/bootstrap.yml
+#
+# Re-run later (key auth already works, skip the password prompt):
+#   ansible-playbook playbooks/bootstrap.yml --skip-tags ssh_bootstrap
+#
+# Run just one stage (e.g. after changing a network var):
+#   ansible-playbook playbooks/bootstrap.yml --tags network
+#
+# Each stage also remains available as its own playbook (ssh_bootstrap.yml,
+# update.yml, harden.yml, network.yml, cluster.yml) - this just chains them
+# in the right order. See README.md for what each one does and the
+# prerequisites/caveats specific to it (switch VLAN config for network.yml,
+# password-auth lockout risk for harden.yml, etc).
+
+- import_playbook: ssh_bootstrap.yml
+  tags: ssh_bootstrap
+
+- import_playbook: update.yml
+  tags: update
+
+- import_playbook: harden.yml
+  tags: harden
+
+- import_playbook: network.yml
+  tags: network
+
+- import_playbook: cluster.yml
+  tags: cluster

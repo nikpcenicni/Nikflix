@@ -1,0 +1,73 @@
+---
+# ---- common role ----
+common_timezone: "Etc/UTC"
+common_packages:
+  - chrony
+  - unattended-upgrades
+  - apt-listchanges
+  - vim
+  - curl
+  - gnupg
+
+# Comment out the enterprise repo and add pve-no-subscription instead.
+# Set to false if these nodes have a valid Proxmox subscription.
+manage_pve_repos: true
+
+# Only report that a reboot is needed; don't reboot automatically.
+# These are hypervisors that may be running VMs/CTs - flip per-run with
+# `-e reboot_if_required=true` (playbooks run serial:1, one node at a time)
+# once you've confirmed it's safe (e.g. migrated guests off, checked cluster quorum).
+reboot_if_required: false
+
+enable_unattended_upgrades: true
+
+# ---- hardening role ----
+ssh_port: "{{ ansible_port | default(22) }}"
+ssh_permit_root_login: prohibit-password   # key-only, no passwords
+ssh_password_authentication: "no"
+ssh_max_auth_tries: 3
+ssh_client_alive_interval: 300
+ssh_client_alive_count_max: 2
+# Restrict which users may SSH in at all. Leave empty to not restrict.
+ssh_allow_users: []
+
+sysctl_hardening_enabled: true
+
+fail2ban_enabled: true
+fail2ban_bantime: 1h
+fail2ban_findtime: 10m
+fail2ban_maxretry: 5
+# Your management subnet is included so admins on the LAN aren't banned.
+# Update this if you manage the nodes from elsewhere too.
+fail2ban_ignoreip:
+  - 127.0.0.1/8
+  - ::1
+  - 192.168.10.0/24
+
+auditd_enabled: true
+
+# ---- network role ----
+# Dedicated 1GbE NIC (nic0). VLAN 100 is the native/untagged VLAN on the
+# switch port for this NIC (confirmed via tcpdump), so the IP goes directly
+# on nic0 - no 802.1Q tagging on the Proxmox side.
+# Per-node pve_corosync_ip lives in inventory/host_vars/<host>.yml.
+pve_corosync_vlan: 100
+pve_corosync_subnet_prefix: 24
+
+# Second dedicated 2.5GbE NIC (nic2), for storage traffic.
+# Tagging (native vs 802.1Q) gets confirmed with tcpdump before the config
+# is written, same as corosync was - see roles/network/tasks/storage.yml.
+# Per-node pve_storage_ip lives in inventory/host_vars/<host>.yml.
+pve_storage_vlan: 80
+pve_storage_subnet_prefix: 24
+
+# ---- cluster role ----
+# Must match Proxmox's cluster name rules: alphanumeric + hyphens only.
+pve_cluster_name: noble
+# link0 = dedicated corosync VLAN (see network role/playbook), link1 = the
+# management network as a fallback if link0/its switch has a problem.
+# Requires playbooks/network.yml to have been run first.
+pve_cluster_link0: "{{ pve_corosync_ip }}"
+pve_cluster_link1: "{{ ansible_host }}"
+# Extra args appended to `pvecm create`/`pvecm add`, e.g. `--votes 2`.
+pve_cluster_extra_args: ""

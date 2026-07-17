@@ -1,0 +1,78 @@
+---
+# One-time bootstrap: generates a local SSH keypair for managing these
+# Proxmox nodes (if one doesn't already exist) and installs it on all three
+# using their current root password, so every other playbook in this repo
+# can use key-based auth.
+#
+# Prompts once for the root password (assumes the same password on all
+# three nodes - if they differ, bootstrap one host at a time instead:
+# `ansible-playbook playbooks/ssh_bootstrap.yml -l helium`, then repeat).
+# Requires `sshpass` installed locally - Ansible needs it to script
+# password-based SSH non-interactively (`brew install hudochenkov/sshpass/sshpass`
+# on macOS, `apt install sshpass` on Debian/Ubuntu).
+#
+# Safe to re-run: leave the password prompt blank once key auth already
+# works and this just re-confirms the authorized_keys entry over the
+# existing key (no password/sshpass needed in that case).
+
+- name: Generate local SSH keypair and trust node host keys
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    proxmox_mgmt_key: "{{ (hostvars[groups['noble'][0]].ansible_ssh_private_key_file) | expanduser }}"
+  tasks:
+    - name: Ensure ~/.ssh directory exists
+      ansible.builtin.file:
+        path: "{{ proxmox_mgmt_key | dirname }}"
+        state: directory
+        mode: "0700"
+
+    - name: Generate ed25519 keypair if it doesn't already exist
+      ansible.builtin.command: >-
+        ssh-keygen -t ed25519 -N "" -f {{ proxmox_mgmt_key }} -C "ansible-proxmox"
+      args:
+        creates: "{{ proxmox_mgmt_key }}"
+
+    - name: Scan node SSH host keys
+      ansible.builtin.command: "ssh-keyscan -T 5 {{ hostvars[item].ansible_host }}"
+      loop: "{{ groups['noble'] }}"
+      register: node_keyscan
+      changed_when: false
+      until: node_keyscan.stdout | length > 0
+      retries: 3
+      delay: 2
+
+    - name: Trust node SSH host keys locally
+      ansible.builtin.known_hosts:
+        name: "{{ hostvars[item.item].ansible_host }}"
+        key: "{{ item.stdout }}"
+      loop: "{{ node_keyscan.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+- name: Install the management key on each node
+  hosts: noble
+  gather_facts: false
+  vars_prompt:
+    - name: proxmox_root_password
+      prompt: >-
+        Root password currently set on the Proxmox nodes (used once to
+        install your SSH key - leave blank if key auth already works)
+      private: true
+      default: ""
+  vars:
+    ansible_password: "{{ proxmox_root_password if proxmox_root_password | length > 0 else omit }}"
+  tasks:
+    - name: Read local management public key
+      ansible.builtin.slurp:
+        src: "{{ ansible_ssh_private_key_file }}.pub"
+      delegate_to: localhost
+      become: false
+      register: mgmt_pubkey_raw
+
+    - name: Authorize the management key for root
+      ansible.builtin.authorized_key:
+        user: root
+        key: "{{ mgmt_pubkey_raw.content | b64decode }}"
+        state: present

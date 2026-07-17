@@ -1,0 +1,25 @@
+
+# Managed by Ansible (hardening role) - do not edit by hand
+#
+# Loaded via the `Include /etc/ssh/sshd_config.d/*.conf` at the top of the
+# stock Debian/Proxmox sshd_config. sshd uses first-match-wins semantics, so
+# directives set here take precedence over the defaults in the main file.
+
+Port {{ ssh_port }}
+PermitRootLogin {{ ssh_permit_root_login }}
+PasswordAuthentication {{ ssh_password_authentication }}
+PubkeyAuthentication yes
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+X11Forwarding no
+MaxAuthTries {{ ssh_max_auth_tries }}
+ClientAliveInterval {{ ssh_client_alive_interval }}
+ClientAliveCountMax {{ ssh_client_alive_count_max }}
+
+# Left enabled (default): Proxmox live-migration between cluster nodes
+# tunnels over SSH by default (unless a dedicated migration network is
+# configured), so do not set AllowTcpForwarding/GatewayPorts to no here.
+{% if ssh_allow_users %}
+
+AllowUsers {{ ssh_allow_users | join(' ') }}
+{% endif %}

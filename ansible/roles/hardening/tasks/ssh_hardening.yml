@@ -1,0 +1,11 @@
+---
+- name: Deploy SSH hardening drop-in
+  ansible.builtin.template:
+    src: 99-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    owner: root
+    group: root
+    mode: "0600"
+  notify:
+    - Validate sshd config
+    - Restart sshd

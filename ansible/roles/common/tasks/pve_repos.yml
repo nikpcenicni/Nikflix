@@ -1,0 +1,42 @@
+---
+# Fresh Proxmox installs have the enterprise repos enabled by default, which
+# return 401s on `apt update` without a paid subscription. Disable them and
+# switch to the no-subscription repo so updates actually work.
+#
+# PVE 8.1+ (including PVE 9 / trixie) ships these as deb822 .sources files
+# instead of the classic .list format, so both are handled here.
+
+- name: Find PVE/Ceph enterprise apt source files
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    patterns:
+      - "pve-enterprise.list"
+      - "pve-enterprise.sources"
+      - "ceph.list"
+      - "ceph.sources"
+  register: pve_enterprise_files
+
+- name: Disable enterprise repo (classic .list format)
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: '^deb '
+    replace: '#deb '
+  loop: "{{ pve_enterprise_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: item.path.endswith('.list')
+
+- name: Disable enterprise repo (deb822 .sources format)
+  ansible.builtin.command:
+    cmd: "mv {{ item.path }} {{ item.path }}.disabled"
+    creates: "{{ item.path }}.disabled"
+  loop: "{{ pve_enterprise_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: item.path.endswith('.sources')
+
+- name: Add PVE no-subscription repo
+  ansible.builtin.apt_repository:
+    repo: "deb http://download.proxmox.com/debian/pve {{ ansible_facts['distribution_release'] }} pve-no-subscription"
+    filename: pve-no-subscription
+    state: present

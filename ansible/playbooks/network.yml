@@ -1,0 +1,34 @@
+---
+# Configures the dedicated corosync network (VLAN pve_corosync_vlan on
+# nic0, the 1GbE NIC) and the storage network (VLAN pve_storage_vlan on
+# nic2, the second 2.5GbE NIC) on every node, then verifies all three can
+# reach each other over both.
+#
+# Run this BEFORE cluster.yml - pvecm needs pve_corosync_ip to already
+# exist and be reachable. Requires the relevant switch ports on all three
+# nodes to already be configured for these VLANs - that part is on you,
+# Ansible only configures the Proxmox side.
+#
+# Applies one node at a time (serial: 1) via `ifreload -a` so a bad config
+# is caught on the first node before it touches the rest.
+
+- name: Configure corosync and storage networks
+  hosts: noble
+  serial: 1
+  roles:
+    - network
+
+- name: Verify network connectivity between nodes
+  hosts: noble
+  tasks:
+    - name: Ping peer nodes over the corosync network
+      ansible.builtin.command: "ping -c 2 -W 2 {{ hostvars[item].pve_corosync_ip }}"
+      loop: "{{ groups['noble'] }}"
+      when: item != inventory_hostname
+      changed_when: false
+
+    - name: Ping peer nodes over the storage network
+      ansible.builtin.command: "ping -c 2 -W 2 {{ hostvars[item].pve_storage_ip }}"
+      loop: "{{ groups['noble'] }}"
+      when: item != inventory_hostname
+      changed_when: false

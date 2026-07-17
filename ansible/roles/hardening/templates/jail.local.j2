@@ -1,0 +1,21 @@
+
+# Managed by Ansible (hardening role) - do not edit by hand
+
+[DEFAULT]
+bantime = {{ fail2ban_bantime }}
+findtime = {{ fail2ban_findtime }}
+maxretry = {{ fail2ban_maxretry }}
+ignoreip = {{ fail2ban_ignoreip | join(' ') }}
+backend = systemd
+
+[sshd]
+enabled = true
+port = {{ ssh_port }}
+
+# Uncomment and verify against your pveproxy access log format if you want
+# to also ban repeated failed logins against the Proxmox web UI:
+# [proxmox]
+# enabled = true
+# port = https,8006
+# filter = proxmox
+# logpath = /var/log/daemon.log

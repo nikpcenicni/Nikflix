@@ -1,0 +1,37 @@
+
+# Managed by Ansible (hardening role) - do not edit by hand
+#
+# Intentionally does NOT touch net.ipv4.ip_forward or bridge netfilter
+# settings (net.bridge.bridge-nf-call-*) - Proxmox relies on these for
+# VM/CT networking (routed/NAT setups and the firewall bridge hooks).
+
+# Network hardening
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.default.accept_source_route = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.log_martians = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.tcp_syncookies = 1
+
+# Loose (not strict) reverse-path filtering: strict mode (1) can drop
+# legitimate traffic on hypervisors with multiple NICs / asymmetric routes
+# (e.g. separate storage/migration networks).
+net.ipv4.conf.all.rp_filter = 2
+net.ipv4.conf.default.rp_filter = 2
+
+# Kernel hardening
+kernel.randomize_va_space = 2
+kernel.dmesg_restrict = 1
+kernel.kptr_restrict = 2
+fs.suid_dumpable = 0
+fs.protected_hardlinks = 1
+fs.protected_symlinks = 1

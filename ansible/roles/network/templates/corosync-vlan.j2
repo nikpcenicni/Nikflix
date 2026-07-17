@@ -1,0 +1,17 @@
+# Managed by Ansible (network role) - corosync-only network on the
+# dedicated 1GbE NIC (nic0). No bridge, no gateway - isolated segment for
+# cluster traffic only, nothing else should be put on this interface.
+#
+# VLAN {{ pve_corosync_vlan }} is configured as the native/untagged VLAN on
+# this switch port, so the IP goes directly on nic0 - no 802.1Q tagging
+# needed on the Proxmox side. (Confirmed via tcpdump: frames arrive on
+# nic0 with no vlan header.)
+#
+# nic0 is already declared (iface nic0 inet manual) as a placeholder in the
+# main /etc/network/interfaces, which PVE manages - this sourced file
+# supplies the real config, per PVE's own documented source-directory
+# convention (see the header of that file).
+
+auto nic0
+iface nic0 inet static
+	address {{ pve_corosync_ip }}/{{ pve_corosync_subnet_prefix }}

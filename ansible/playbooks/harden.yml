@@ -1,0 +1,8 @@
+---
+# Run update.yml first and confirm key-based SSH works before running this -
+# it disables SSH password authentication. See README.md.
+- name: Harden Proxmox nodes
+  hosts: noble
+  serial: 1
+  roles:
+    - hardening

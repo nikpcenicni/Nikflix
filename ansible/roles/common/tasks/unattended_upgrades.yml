@@ -1,0 +1,28 @@
+---
+# Deliberately conservative: security updates only, no automatic reboot.
+# These are hypervisors - an unattended kernel/pve-kernel swap or reboot
+# could take VMs down without warning. Automatic origins intentionally
+# exclude the Proxmox no-subscription repo (kernel/pve-manager updates
+# should stay a deliberate, one-node-at-a-time action via update.yml).
+
+- name: Deploy unattended-upgrades config
+  ansible.builtin.template:
+    src: 51-unattended-upgrades-custom.j2
+    dest: /etc/apt/apt.conf.d/51unattended-upgrades-custom
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Enable periodic apt updates
+  ansible.builtin.template:
+    src: 20auto-upgrades.j2
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Ensure unattended-upgrades service is enabled
+  ansible.builtin.service:
+    name: unattended-upgrades
+    state: started
+    enabled: true

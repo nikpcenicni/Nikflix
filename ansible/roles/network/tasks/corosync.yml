@@ -1,0 +1,28 @@
+---
+- name: Configure corosync VLAN interface
+  ansible.builtin.template:
+    src: corosync-vlan.j2
+    dest: /etc/network/interfaces.d/corosync
+    owner: root
+    group: root
+    mode: "0644"
+  register: corosync_iface_conf
+
+# ifreload (ifupdown2) applies /etc/network/interfaces + interfaces.d/*
+# live, without a reboot, and only touches interfaces whose config actually
+# changed - this doesn't affect nic1/vmbr0 (management) since that config
+# isn't in this file. Run one node at a time (see playbooks/network.yml) so
+# a bad config is caught here, not propagated to all three at once.
+- name: Apply network config
+  ansible.builtin.command: ifreload -a
+  when: corosync_iface_conf.changed
+
+- name: Verify corosync interface is up
+  ansible.builtin.command: "ip -br addr show nic0"
+  register: corosync_iface_state
+  changed_when: false
+  # Link negotiation on the physical NIC can take a couple of seconds after
+  # ifreload brings it up, so retry rather than failing on first check.
+  until: "'UP' in corosync_iface_state.stdout"
+  retries: 5
+  delay: 2

@@ -1,0 +1,64 @@
+---
+- name: Check if node already belongs to a cluster
+  ansible.builtin.stat:
+    path: /etc/pve/corosync.conf
+  register: corosync_conf
+
+- name: Read existing cluster name
+  ansible.builtin.shell: "grep -m1 -oP '(?<=cluster_name: ).*' /etc/pve/corosync.conf"
+  register: existing_cluster_name
+  changed_when: false
+  when: corosync_conf.stat.exists
+
+- name: Fail if node already belongs to a different cluster
+  ansible.builtin.assert:
+    that: existing_cluster_name.stdout == pve_cluster_name
+    fail_msg: >-
+      {{ inventory_hostname }} already belongs to cluster
+      '{{ existing_cluster_name.stdout }}', expected '{{ pve_cluster_name }}'.
+      Resolve manually before re-running this playbook.
+  when: corosync_conf.stat.exists
+
+- name: Create the cluster (founding node only)
+  ansible.builtin.shell: >-
+    pvecm create {{ pve_cluster_name }}
+    --link0 {{ pve_cluster_link0 }} --link1 {{ pve_cluster_link1 }}
+    {{ pve_cluster_extra_args }}
+    && test -f /etc/pve/corosync.conf
+  register: pvecm_create_result
+  until: pvecm_create_result.rc == 0
+  retries: 3
+  delay: 10
+  when:
+    - not corosync_conf.stat.exists
+    - inventory_hostname == groups['noble'][0]
+
+# pvecm add can exit 0 while having silently failed a step (observed:
+# "unable to copy ssh ID: ... Permission denied" right after the corosync
+# network first came up, most likely a transient race) without ever
+# creating corosync.conf. Chaining a check for the file's existence turns
+# that silent failure into a real non-zero exit, so `until` retries it
+# instead of treating it as done.
+- name: Join the cluster (non-founding nodes)
+  ansible.builtin.shell: >-
+    pvecm add {{ hostvars[groups['noble'][0]].ansible_host }}
+    --use_ssh 1
+    --link0 {{ pve_cluster_link0 }} --link1 {{ pve_cluster_link1 }}
+    {{ pve_cluster_extra_args }}
+    && test -f /etc/pve/corosync.conf
+  register: pvecm_add_result
+  until: pvecm_add_result.rc == 0
+  retries: 3
+  delay: 10
+  when:
+    - not corosync_conf.stat.exists
+    - inventory_hostname != groups['noble'][0]
+
+- name: Wait for this node to report a quorate cluster
+  ansible.builtin.command: pvecm status
+  register: pvecm_status
+  until: "'Quorate' in pvecm_status.stdout and 'Yes' in pvecm_status.stdout"
+  retries: 10
+  delay: 5
+  changed_when: false
+  when: not corosync_conf.stat.exists

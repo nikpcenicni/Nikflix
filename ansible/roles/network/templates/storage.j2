@@ -1,0 +1,15 @@
+# Managed by Ansible (network role) - storage network on the second
+# dedicated 2.5GbE NIC (nic2). No bridge, no gateway.
+#
+# VLAN {{ pve_storage_vlan }} is native/untagged on this switch port
+# (confirmed via tcpdump, same as the corosync port), so the IP goes
+# directly on nic2 - no 802.1Q tagging needed on the Proxmox side.
+#
+# nic2 is already declared (iface nic2 inet manual) as a placeholder in the
+# main /etc/network/interfaces, which PVE manages - this sourced file
+# supplies the real config, per PVE's own documented source-directory
+# convention (see the header of that file).
+
+auto nic2
+iface nic2 inet static
+	address {{ pve_storage_ip }}/{{ pve_storage_subnet_prefix }}

@@ -1,0 +1,7 @@
+---
+pve_corosync_ip: 10.10.100.10
+pve_storage_ip: 192.168.80.10
+# helium's installer never created a nic2 naming rule for the second
+# 2.5GbE NIC (neon/argon have one, helium didn't - probably not detected
+# at install time). Pin it explicitly so nic2 is consistent across nodes.
+pve_nic2_mac_override: "00:e0:4c:68:01:59"

@@ -1,0 +1,21 @@
+---
+- name: Configure storage network interface
+  ansible.builtin.template:
+    src: storage.j2
+    dest: /etc/network/interfaces.d/storage
+    owner: root
+    group: root
+    mode: "0644"
+  register: storage_iface_conf
+
+- name: Apply network config
+  ansible.builtin.command: ifreload -a
+  when: storage_iface_conf.changed
+
+- name: Verify storage interface is up
+  ansible.builtin.command: "ip -br addr show nic2"
+  register: storage_iface_state
+  changed_when: false
+  until: "'UP' in storage_iface_state.stdout"
+  retries: 5
+  delay: 2

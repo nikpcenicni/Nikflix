@@ -1,0 +1,50 @@
+---
+# `pvecm add ... --use_ssh` joins over plain root SSH between the nodes
+# themselves (not via our controller's key), so that trust has to exist
+# first. Interactive `pvecm add` sets this up as part of the join wizard;
+# we replicate it here so the join can run non-interactively.
+
+- name: Ensure root has an SSH keypair for inter-node cluster auth
+  ansible.builtin.user:
+    name: root
+    generate_ssh_key: true
+    ssh_key_type: ed25519
+    ssh_key_file: .ssh/id_ed25519
+
+- name: Read root's public key
+  ansible.builtin.slurp:
+    src: /root/.ssh/id_ed25519.pub
+  register: root_pubkey_raw
+
+- name: Record this node's public key for peers
+  ansible.builtin.set_fact:
+    node_ssh_pubkey: "{{ root_pubkey_raw.content | b64decode }}"
+
+- name: Trust every peer node's public key
+  ansible.builtin.authorized_key:
+    user: root
+    key: "{{ hostvars[item].node_ssh_pubkey }}"
+    state: present
+  loop: "{{ groups['noble'] }}"
+  when: item != inventory_hostname
+
+- name: Scan peer node SSH host keys
+  ansible.builtin.command: "ssh-keyscan -t ed25519 -T 5 {{ hostvars[item].ansible_host }}"
+  loop: "{{ groups['noble'] }}"
+  when: item != inventory_hostname
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  register: peer_keyscan
+  until: peer_keyscan.stdout | length > 0
+  retries: 3
+  delay: 2
+
+- name: Trust peer node SSH host keys
+  ansible.builtin.known_hosts:
+    name: "{{ hostvars[item.item].ansible_host }}"
+    key: "{{ item.stdout }}"
+    path: /root/.ssh/known_hosts
+  loop: "{{ peer_keyscan.results | rejectattr('skipped', 'defined') }}"
+  loop_control:
+    label: "{{ item.item }}"
