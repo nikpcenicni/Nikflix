@@ -1,6 +1,6 @@
 # Raw Ingress manifests for already-installed apps (ArgoCD, Headlamp,
-# Grafana, authentik) - ../manifests/ingress-apps/. Each resource sets its
-# own namespace, so destination.namespace below is only a fallback.
+# Grafana) - ../manifests/ingress-apps/. Each resource sets its own
+# namespace, so destination.namespace below is only a fallback.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
