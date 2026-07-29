@@ -1,18 +1,19 @@
 # Media Stack Architecture (target state)
 
-This is the application layer on top of [talos.md](talos.md) — the *arr
-stack and Jellyfin. Like talos.md, it's a target-state design doc: none
-of this is deployed yet.
+This document describes the application layer on top of
+[talos.md](talos.md): the *arr stack and Jellyfin. Like talos.md, this
+document is a target-state design. None of this is deployed yet.
 
-Two things run outside the Talos cluster's scope: nothing here changes
-that — Jellyfin runs on a **Mac Mini**, not as a Talos workload, because
-hardware-accelerated transcoding (Quick Sync on Intel, VideoToolbox on
-Apple Silicon) is straightforward on bare metal and would mean GPU
-passthrough into a VM otherwise. Everything else — the *arr stack, both
-download clients, subtitle automation, and the request portal — runs as
-regular Kubernetes workloads on Talos, GitOps-managed by the same ArgoCD
+One component runs outside the Talos cluster's scope. Jellyfin runs on a
+Mac Mini, not as a Talos workload. Hardware-accelerated transcoding,
+Quick Sync on Intel or VideoToolbox on Apple Silicon, is straightforward
+on bare metal. Running Jellyfin on Talos would otherwise mean Graphics
+Processing Unit (GPU) passthrough into a VM. Everything else — the *arr
+stack, both download clients, subtitle automation, and the request
+portal — runs as regular Kubernetes workloads on Talos. The same ArgoCD
 instance described in
-[talos.md's Core platform applications](talos.md#core-platform-applications).
+[talos.md's Core platform applications](talos.md#core-platform-applications)
+manages these workloads through GitOps.
 
 ## Components
 
@@ -27,41 +28,48 @@ instance described in
 | Bazarr | Subtitle automation — watches the Sonarr/Radarr libraries, fetches matching subtitles | Talos | No |
 | Jellyfin | Media server — transcodes and streams the finished library to clients | **Mac Mini** | No |
 
-Only qBittorrent needs a VPN: torrent swarms expose participants' IPs to
-every peer, usenet doesn't. Routing just that one client's egress through
-a VPN sidecar (rather than a cluster-wide VPN) keeps everything else's
-networking simple.
+Only qBittorrent needs a Virtual Private Network (VPN). Torrent swarms
+expose each participant's IP address to every peer; Usenet does not
+expose IP addresses this way. Routing only that one client's egress
+through a VPN sidecar, rather than a cluster-wide VPN, keeps the
+networking for every other component simple.
 
-`arr` app config (SQLite databases, settings) is small, stateful, and
-needs to survive pod rescheduling — backed by a Longhorn PVC per app,
-same mechanism as [talos.md's platform apps](talos.md#core-platform-applications).
-The media library itself is bulk storage and lives elsewhere — see
-below — not on Longhorn.
+Each *arr app's config, its SQLite databases and settings, is small and
+stateful. This config must survive pod rescheduling. A Longhorn
+Persistent Volume Claim (PVC) per app backs this config, the same
+mechanism [talos.md's platform apps](talos.md#core-platform-applications)
+use. The media library itself is bulk storage. The library lives
+elsewhere, not on Longhorn — see [Storage](#storage-shared-nas-library)
+below.
 
 ## Storage: shared NAS library
 
-The media library (what Jellyfin serves, and what Sonarr/Radarr import
-into) lives on the **NAS**, mounted by both sides — the *arr stack's
-Talos worker nodes, and the Mac Mini running Jellyfin — over **two
-different protocols, on two different NICs and VLANs**, not one shared
+The media library is what Jellyfin serves, and what Sonarr and Radarr
+import files into. This library lives on the Network Attached Storage
+(NAS). Both sides mount the library: the *arr stack's Talos worker VMs,
+and the Mac Mini running Jellyfin. Each side mounts the library over a
+different protocol, on a different NIC and VLAN, not over one shared
 path:
 
-- **NFS over VLAN 80**, for the Talos side (Linux) — the *arr stack pods
-  run on Talos worker VMs, which already carry a second NIC on VLAN 80
-  for Longhorn (see [talos.md's Storage section](talos.md#storage-longhorn-on-dedicated-per-node-ssds)).
-  The NFS mount reuses that same interface rather than adding a third
-  NIC, and keeps bulk media/download traffic off VLAN 10 entirely.
-- **SMB over VLAN 10**, for the Mac Mini — chosen over NFS specifically
-  because of past reliability issues with macOS's NFS client. The Mac
-  Mini only has one NIC/one network, so VLAN 10 is its only option
-  regardless of protocol.
+- **Network File System (NFS) over VLAN 80, for the Talos side (Linux).**
+  The *arr stack pods run on Talos worker VMs, which already carry a
+  second NIC on VLAN 80 for Longhorn (see
+  [talos.md's Storage section](talos.md#storage-longhorn-on-dedicated-per-node-ssds)).
+  The NFS mount reuses that same interface, instead of adding a third
+  NIC. This choice keeps bulk media and download traffic off VLAN 10
+  entirely.
+- **Server Message Block (SMB) over VLAN 10, for the Mac Mini.** The
+  design chose SMB over NFS specifically because of past reliability
+  issues with macOS's NFS client. The Mac Mini has only one NIC and one
+  network, so VLAN 10 is its only option, regardless of protocol.
 
-The NAS itself has **two dedicated 10GbE NICs** to support this split —
-one on VLAN 10 (serving SMB to the Mac Mini and general LAN access), one
-on VLAN 80 (serving NFS to the Talos workers, and doubling as the path
-for Longhorn's S3 backup target from [talos.md](talos.md#backup)). One
-shared library either way, not a copy on each side — just two different
-mount paths into it, on two different networks.
+The NAS itself has two dedicated 10 Gigabit Ethernet (10GbE) NICs to
+support this split. One NIC serves VLAN 10, for SMB to the Mac Mini and
+general Local Area Network (LAN) access. The other NIC serves VLAN 80,
+for NFS to the Talos worker VMs, and doubles as the path for Longhorn's
+S3 backup target from [talos.md](talos.md#backup). Both sides share one
+library; neither side holds a copy. Each side has only a different mount
+path into the same library, on a different network.
 
 ```mermaid
 graph TB
@@ -100,24 +108,26 @@ graph LR
     Jellyfin -->|"reads (SMB)"| Library
 ```
 
-Same NAS already used for Longhorn's S3 backup target in
-[talos.md](talos.md#backup) — this is a second, unrelated share on it
-(bulk media files, not Longhorn snapshots).
+This library uses the same NAS already used for Longhorn's S3 backup
+target in [talos.md](talos.md#backup). The media library is a second,
+unrelated share on the NAS: it holds bulk media files, not Longhorn
+snapshots.
 
 ### Import behavior: move, not hardlink
 
-Sonarr/Radarr are configured to **move** completed downloads into the
-library rather than hardlink them. Hardlinking is cheaper (metadata-only,
-instant) but requires `downloads/` and `library/` to sit on the same
-filesystem — moving avoids that constraint at the cost of an actual file
+The Sonarr and Radarr config moves completed downloads into the library,
+instead of creating a hardlink to them. A hardlink is cheaper: it only
+changes metadata and completes instantly. However, a hardlink
+requires `downloads/` and `library/` to sit on the same filesystem.
+Moving the file avoids that constraint, at the cost of an actual file
 copy across the NAS's own filesystem.
 
-qBittorrent is configured to **stop seeding and remove the torrent once
-its seeding goal (ratio/time) is met**, rather than seeding indefinitely.
-Combined with move-based import, this keeps `downloads/` from
-accumulating completed torrents that have already been moved into the
-library — without it, a torrent could keep seeding a file that no longer
-needs to exist in `downloads/` at all.
+The qBittorrent config stops seeding and removes the torrent once it
+meets its seeding goal (ratio or time), instead of seeding indefinitely.
+Combined with move-based import, this setting keeps `downloads/` from
+accumulating completed torrents that have already moved into the
+library. Without this setting, a torrent could keep seeding a file that
+no longer needs to exist in `downloads/` at all.
 
 ## Request → playback flow
 
@@ -142,31 +152,33 @@ sequenceDiagram
     JF-->>U: available to stream
 ```
 
-Bazarr isn't in this sequence directly — it runs on its own schedule,
-watching the library for content missing subtitles rather than reacting
-to each import.
+Bazarr does not appear in this sequence directly. Bazarr runs on its own
+schedule. It watches the library for content that is missing subtitles,
+instead of reacting to each import.
 
 ## Networking
 
-Ingress into the *arr stack's web UIs (Jellyseerr, Sonarr, Radarr,
-Prowlarr, Bazarr, qBittorrent/SABnzbd UIs) reuses the same
-**ingress-nginx** and cert-manager setup from
-[talos.md](talos.md#core-platform-applications) — no separate ingress
-layer for this app tier.
+Ingress into the *arr stack's web User Interfaces (UIs) reuses the same
+ingress-nginx and cert-manager setup from
+[talos.md](talos.md#core-platform-applications). This covers Jellyseerr,
+Sonarr, Radarr, Prowlarr, Bazarr, qBittorrent, and SABnzbd. This app tier
+has no separate ingress layer.
 
-The Mac Mini running Jellyfin isn't part of the Talos/Proxmox network
-design in [proxmox.md](proxmox.md) or [talos.md](talos.md) at all — it
-sits on **VLAN 10**, the general management/LAN network, alongside client
-devices and the Talos VMs' own management IPs — not on the
-Proxmox-specific VLAN 80 storage network, and it has only the one NIC, so
-it has no way onto VLAN 80 even if it needed one.
+The Mac Mini running Jellyfin is not part of the Talos or Proxmox network
+design in [proxmox.md](proxmox.md) or [talos.md](talos.md) at all. The
+Mac Mini sits on VLAN 10, the general management and LAN network,
+alongside client devices and the Talos VMs' own management IP addresses.
+It does not sit on the Proxmox-specific VLAN 80 storage network. The Mac
+Mini has only one NIC, so it has no path onto VLAN 80, even if it needed
+one.
 
-The *arr stack's NFS traffic, by contrast, rides **VLAN 80** — see
-[Storage](#storage-shared-nas-library) above for why, and the NAS's
-dual-NIC setup that makes it possible.
+The *arr stack's NFS traffic, by contrast, runs over VLAN 80. See
+[Storage](#storage-shared-nas-library) above for the reasons, and for the
+NAS's dual-NIC setup that makes it possible.
 
 ## Open questions
 
-None outstanding — VPN provider (PIA), NAS protocols (NFS for Talos, SMB
-for the Mac Mini), network placement (VLAN 10), and the import/seeding
-behavior are all settled above.
+This document has no outstanding open questions. The VPN provider (PIA)
+and the NAS protocols (NFS for Talos, SMB for the Mac Mini) are settled
+above. The network placement for each component, and the import and
+seeding behavior, are also settled above.

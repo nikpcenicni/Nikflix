@@ -6,12 +6,12 @@ locals {
   # target state in docs/architecture/talos.md, but doubled up 2-per-node on
   # the three nodes that actually exist today (krypton/xenon/radon are still
   # "planned" per docs/architecture/proxmox.md) instead of one role per node.
-  # Sizing reuses the exact spec proven out in ../terraform's smoke test
+  # Sizing reuses the exact spec proven out in ../../terraform's smoke test
   # (2 vCPU / 2GiB / 20GB+20GB) rather than the full target sizing - this is
   # meant to be a real, usable interim cluster while waiting on the
   # krypton/xenon/radon hardware, not another one-off smoke test.
   #
-  # mgmt_ip/storage_ip are NOT applied by this config - see ../terraform's
+  # mgmt_ip/storage_ip are NOT applied by this config - see ../../terraform's
   # locals.tf for why (Talos ignores cloud-init; talosctl applies network
   # config afterward). Picked a distinct .121-.126 range purely so these
   # never get confused with the real target VMs' .101-.106 if both are ever

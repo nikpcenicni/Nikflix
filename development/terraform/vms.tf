@@ -5,7 +5,7 @@
 # a single declarative machine config"). That step is intentionally not done
 # here.
 #
-# This is the scaled-down interim/dev variant of ../terraform (see its
+# This is the scaled-down interim/dev variant of ../../terraform (see its
 # README/vms.tf for the target-state design and open questions this inherits,
 # e.g. CPU type, untagged VLANs). The one deliberate difference: both disks
 # below stay on var.vm_storage (local-lvm) - no dedicated per-node SSD pool,
