@@ -70,12 +70,16 @@ grafana:
     runAsUser: 0
     runAsNonRoot: false
     fsGroup: 0
+  # 256Mi OOMKilled this pod repeatedly (exit code 137) - modern Grafana's
+  # apiserver/unified-storage subsystem (registers ~15 GroupVersions at
+  # startup: folder, provisioning, playlist, plugins, shorturl, etc.) needs
+  # meaningfully more headroom than older Grafana versions did.
   resources:
     requests:
       cpu: 50m
-      memory: 128Mi
-    limits:
       memory: 256Mi
+    limits:
+      memory: 768Mi
 
 kubeControllerManager:
   enabled: false
