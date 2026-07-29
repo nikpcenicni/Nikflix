@@ -32,6 +32,32 @@ prometheus:
 
 grafana:
   adminPassword: dev-admin-changeme
+  # CHANGEME: client_id/client_secret below are placeholders for a lab-only
+  # dev cluster, matching the "Grafana" provider in
+  # ../values/authentik-values.yaml's authentik-blueprints ConfigMap - see
+  # that file's CHANGEME note. Rotate both together.
+  grafana.ini:
+    server:
+      root_url: https://grafana.lab.pcenicni.dev
+    auth:
+      oauth_auto_login: false
+      signout_redirect_url: https://auth.lab.pcenicni.dev/application/o/grafana/end-session/
+    auth.generic_oauth:
+      enabled: true
+      name: authentik
+      client_id: CHANGEME-4eb51e520b7232f6b43929ef7dbf5d88
+      client_secret: CHANGEME-25895577e9d540d4f04a550b2f00e00e995808630798ae65315d8e24b7b75c9d
+      scopes: "openid profile email"
+      auth_url: https://auth.lab.pcenicni.dev/application/o/authorize/
+      token_url: https://auth.lab.pcenicni.dev/application/o/token/
+      api_url: https://auth.lab.pcenicni.dev/application/o/userinfo/
+      # authentik's default "profile" scope mapping returns a "groups" claim
+      # with the user's authentik group names - map the three Grafana groups
+      # from the authentik-blueprints ConfigMap to Grafana's three org roles,
+      # falling back to Viewer for anyone authenticated but ungrouped.
+      role_attribute_path: "contains(groups[*], 'Grafana Admins') && 'Admin' || contains(groups[*], 'Grafana Editors') && 'Editor' || 'Viewer'"
+      role_attribute_strict: false
+      allow_sign_up: true
   persistence:
     enabled: true
     storageClassName: local-path
