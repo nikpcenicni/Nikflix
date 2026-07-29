@@ -6,10 +6,15 @@ locals {
   # target state in docs/architecture/talos.md, but doubled up 2-per-node on
   # the three nodes that actually exist today (krypton/xenon/radon are still
   # "planned" per docs/architecture/proxmox.md) instead of one role per node.
-  # Sizing reuses the exact spec proven out in ../../terraform's smoke test
-  # (2 vCPU / 2GiB / 20GB+20GB) rather than the full target sizing - this is
-  # meant to be a real, usable interim cluster while waiting on the
-  # krypton/xenon/radon hardware, not another one-off smoke test.
+  # Sizing started at the exact spec proven out in ../../terraform's smoke
+  # test (2 vCPU / 2GiB / 20GB+20GB) rather than the full target sizing -
+  # this is meant to be a real, usable interim cluster while waiting on the
+  # krypton/xenon/radon hardware, not another one-off smoke test. Bumped to
+  # 3 vCPU / 4GiB once ArgoCD's initial cluster-cache build (every CRD from
+  # cert-manager/prometheus-operator/MetalLB/Traefik at once) pushed all
+  # three control-plane nodes to <200MB available memory and the API server
+  # started timing out on plain `list` calls. Each Proxmox host has 15.5GiB/
+  # 6 cores with room to spare (checked via the Proxmox API before bumping).
   #
   # mgmt_ip/storage_ip are NOT applied by this config - see ../../terraform's
   # locals.tf for why (Talos ignores cloud-init; talosctl applies network
@@ -21,8 +26,8 @@ locals {
       vmid             = 201
       node             = "helium"
       role             = "controlplane"
-      vcpu             = 2
-      memory_mib       = 2 * 1024
+      vcpu             = 3
+      memory_mib       = 4 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.121"
@@ -33,8 +38,8 @@ locals {
       vmid             = 202
       node             = "helium"
       role             = "worker"
-      vcpu             = 2
-      memory_mib       = 2 * 1024
+      vcpu             = 3
+      memory_mib       = 4 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.122"
@@ -45,8 +50,8 @@ locals {
       vmid             = 203
       node             = "neon"
       role             = "controlplane"
-      vcpu             = 2
-      memory_mib       = 2 * 1024
+      vcpu             = 3
+      memory_mib       = 4 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.123"
@@ -57,8 +62,8 @@ locals {
       vmid             = 204
       node             = "neon"
       role             = "worker"
-      vcpu             = 2
-      memory_mib       = 2 * 1024
+      vcpu             = 3
+      memory_mib       = 4 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.124"
@@ -69,8 +74,8 @@ locals {
       vmid             = 205
       node             = "argon"
       role             = "controlplane"
-      vcpu             = 2
-      memory_mib       = 2 * 1024
+      vcpu             = 3
+      memory_mib       = 4 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.125"
@@ -81,8 +86,8 @@ locals {
       vmid             = 206
       node             = "argon"
       role             = "worker"
-      vcpu             = 2
-      memory_mib       = 2 * 1024
+      vcpu             = 3
+      memory_mib       = 4 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.126"
