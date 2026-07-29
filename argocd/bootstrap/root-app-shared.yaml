@@ -1,0 +1,31 @@
+# App-of-apps root for apps common to every cluster. Applied by hand into
+# each cluster's ArgoCD, alongside that cluster's own root-app-<name>.yaml
+# (e.g. root-app-dev.yaml) - see argocd/README.md. Everything under it
+# (argocd/shared/apps/) is then reconciled from git the same way.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-shared
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/shared/apps
+    directory:
+      # Only pick up Application manifests directly in apps/ - the
+      # values/ and manifests/ directories those Applications point at are
+      # each app's own source, not additional Applications to register here.
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

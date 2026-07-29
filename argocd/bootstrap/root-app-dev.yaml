@@ -1,0 +1,34 @@
+# App-of-apps root for the dev cluster. One of the (now two) Applications
+# bootstrapped by hand per cluster (`kubectl apply -f
+# argocd/bootstrap/root-app-dev.yaml` against a freshly-installed ArgoCD,
+# alongside root-app-shared.yaml) — see docs/architecture/talos.md's "Core
+# platform applications" section for why: there's no GitOps way to deploy
+# the first GitOps controller. Everything under it (argocd/dev/apps/) is
+# then reconciled from git, including changes to this file itself.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/apps
+    directory:
+      # Only pick up Application manifests directly in apps/ - the
+      # values/ and manifests/ directories those Applications point at are
+      # each app's own source, not additional Applications to register here.
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

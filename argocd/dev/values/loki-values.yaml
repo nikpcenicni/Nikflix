@@ -1,0 +1,64 @@
+# Single-binary mode, filesystem storage - right-sized for the dev cluster.
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: loki_index_
+          period: 24h
+
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 5Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+# We only need the single-binary write/read/backend path, not the
+# microservices split - disable everything else the chart would deploy.
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+minio:
+  enabled: false
+
+gateway:
+  enabled: false
+
+# Optional memcached-based caching layers - pure optimization, not needed
+# for a small dev cluster, and the 2GB-RAM VMs don't have room to spare.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
+lokiCanary:
+  enabled: false
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+  selfMonitoring:
+    enabled: false
+
+test:
+  enabled: false

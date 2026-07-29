@@ -1,0 +1,62 @@
+# Per-node log shipper feeding Loki - see docs/architecture/talos.md's
+# "Core platform applications" table. Uses Alloy's native loki.source.kubernetes
+# component (pulls logs via the k8s API), not hostPath log-file tailing, so it
+# doesn't need the extra host volume mounts Promtail-style shippers use.
+alloy:
+  configMap:
+    content: |-
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+        // Each daemonset replica only ships logs for pods on its own node -
+        // without this, all pods get discovered via the k8s API regardless
+        // of which node they're actually on, and every replica would ship
+        // every pod's logs, tripling everything.
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          regex         = env("K8S_NODE_NAME")
+          action        = "keep"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+controller:
+  type: daemonset
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      effect: NoSchedule

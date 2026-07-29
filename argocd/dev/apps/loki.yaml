@@ -1,0 +1,32 @@
+# Log aggregation, values in ../values/loki-values.yaml. Same "monitoring"
+# namespace as kube-prometheus-stack.yaml - alloy.yaml's config ships logs to
+# loki.monitoring.svc.cluster.local. See docs/architecture/talos.md's "Core
+# platform applications" (Loki).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: loki
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      # TODO: pin to the version already installed by hand (`helm list -n
+      # monitoring`) - see kube-prometheus-stack.yaml's note on why.
+      targetRevision: REPLACE_ME
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/loki-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
