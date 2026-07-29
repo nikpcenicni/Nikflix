@@ -25,19 +25,27 @@ argocd/
 ├── dev/                       # Applications specific to the development cluster
 │   ├── apps/
 │   │   ├── alloy.yaml
+│   │   ├── authentik.yaml
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
+│   │   ├── sops-secrets-operator.yaml
+│   │   ├── argocd-config.yaml
 │   │   ├── cluster-issuers.yaml
 │   │   ├── ingress-apps.yaml
-│   │   └── metallb-pool.yaml
+│   │   ├── metallb-pool.yaml
+│   │   └── secrets.yaml
 │   ├── values/
 │   │   ├── alloy-values.yaml
+│   │   ├── authentik-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
-│   │   └── loki-values.yaml
+│   │   ├── loki-values.yaml
+│   │   └── sops-secrets-operator-values.yaml
 │   └── manifests/
+│       ├── argocd-config/
 │       ├── cluster-issuers/
 │       ├── ingress-apps/
-│       └── metallb-pool/
+│       ├── metallb-pool/
+│       └── secrets/            # SOPS-encrypted SopsSecret resources - see "Secrets management" below
 └── prod/                      # Applications specific to the production cluster (empty scaffold)
     ├── apps/
     ├── values/
@@ -61,30 +69,111 @@ between clusters — see [shared/README.md](shared/README.md). Populate
 The child Applications in each cluster's `apps/` split into two
 groups:
 
-- **Helm-chart Applications** (`alloy`, `kube-prometheus-stack`, `loki`
-  in `dev/`) each use two sources: a Helm chart from an upstream chart
-  repository, and this git repository for the matching values file in
-  that cluster's `values/`. ArgoCD calls this a
+- **Helm-chart Applications** (`alloy`, `authentik`, `kube-prometheus-stack`,
+  `loki`, `sops-secrets-operator` in `dev/`) each use two sources: a Helm
+  chart from an upstream chart repository, and this git repository for the
+  matching values file in that cluster's `values/`. ArgoCD calls this a
   [multi-source Application](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/).
-- **Raw-manifest Applications** (`cluster-issuers`, `ingress-apps`,
-  `metallb-pool` in `dev/`) each use one source: a directory of plain
-  Kubernetes manifests under that cluster's `manifests/`.
+- **Raw-manifest Applications** (`argocd-config`, `cluster-issuers`,
+  `ingress-apps`, `metallb-pool`, `secrets` in `dev/`) each use one source: a
+  directory of plain Kubernetes manifests under that cluster's `manifests/`.
 
 ## Applications (dev)
 
 | Application | Deploys | Namespace | Purpose |
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
-| `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager. |
+| `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). Depends on `sops-secrets-operator` and `secrets` having synced first. |
+| `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
+| `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
+| `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm` and `argocd-rbac-cm` ConfigMaps that ArgoCD's own (by-hand) install created. Wires up OIDC login against authentik and maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles. |
 | `cluster-issuers` | Raw manifests in `dev/manifests/cluster-issuers/` | `cert-manager` | cert-manager `ClusterIssuer` resources. The manifests define a Let's Encrypt staging issuer and a Let's Encrypt production issuer, both through a Cloudflare DNS-01 challenge for the `pcenicni.dev` zone. |
-| `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, and Grafana. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
+| `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
 | `metallb-pool` | Raw manifests in `dev/manifests/metallb-pool/` | `metallb-system` | MetalLB `IPAddressPool` and `L2Advertisement` resources. These resources give MetalLB the address range `192.168.10.240`–`192.168.10.245` to assign to `LoadBalancer` services. |
+| `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, and ArgoCD's OIDC/database credentials - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
 
 Every Application above uses automated sync with `prune: true` and
 `selfHeal: true`. This setting means ArgoCD applies matching changes
 from git automatically, removes resources that git no longer defines,
 and reverts manual changes made directly in the cluster.
+
+## SSO / authentik
+
+`authentik-blueprints` (in `dev/values/authentik-values.yaml`) declaratively
+creates, for each of Grafana, ArgoCD, and Headlamp: an OAuth2/OIDC provider
+and application in authentik, plus one or more RBAC groups. Group
+*membership* is not managed by GitOps - after authentik first syncs, assign
+real users to the `Grafana Admins`/`Editors`/`Viewers`, `ArgoCD
+Admins`/`Viewers`, and `Headlamp Admins` groups by hand in the authentik UI.
+The bootstrap `akadmin` superuser is seeded into each app's admin group
+automatically, so it has working admin access to every app from the start.
+
+Grafana and ArgoCD are fully wired: both read the `groups` claim authentik's
+default `profile` scope mapping returns, from their own app-level OIDC
+config (`grafana.ini`'s `auth.generic_oauth` and `argocd-cm`'s
+`oidc.config`/`argocd-rbac-cm`'s `policy.csv` respectively) - no cluster-level
+changes needed.
+
+Headlamp is **not** fully wired. The authentik-side provider, application,
+and `Headlamp Admins` group exist, but logging in via SSO also requires
+configuring the Kubernetes API server's `--oidc-*` flags (a Talos machine
+config change under `development/talos/`, applied by hand per
+`development/README.md` - out of scope for this GitOps tree, and not yet
+done) and giving Headlamp itself an OIDC client config (Headlamp is not yet
+onboarded as a tracked Application at all - see "Applications not yet
+onboarded" below). Until both of those happen, Headlamp keeps working the
+same way it does today (in-cluster service account), unaffected by
+authentik's presence.
+
+## Secrets management
+
+Every secret this repo needs (authentik's `secret_key`, its Postgres
+credentials, its `akadmin` bootstrap password, and the OAuth2 client
+id/secret pairs for the Grafana/ArgoCD/Headlamp integrations above) is
+[SOPS](https://github.com/getsops/sops)-encrypted with
+[age](https://github.com/FiloSottile/age) and committed as ciphertext under
+`dev/manifests/secrets/` - never plaintext in git. `sops-secrets-operator`
+(see the Applications table above) watches those `SopsSecret` custom
+resources in-cluster and decrypts them into real `Secret` objects; the apps
+that need them (authentik, Grafana, argocd-cm) reference those Secrets by
+name, mostly via each chart's `existingSecret`/`envFromSecret` support or a
+plain `secretKeyRef`.
+
+`.sops.yaml` at the repo root scopes encryption to
+`argocd/*/manifests/secrets/*.yaml` and to only the `data`/`stringData`
+fields within them - everything else in those files (names, namespaces,
+labels, comments) stays plaintext so diffs and reviews stay readable.
+
+### Bootstrapping (once per cluster)
+
+Like `cluster-issuers`' `cloudflare-api-token` Secret, the age decryption key
+is a chicken-and-egg dependency: it has to exist in the cluster *before*
+`sops-secrets-operator` can decrypt anything, so it can't itself be a
+`SopsSecret`. Generate and install it by hand, once per cluster:
+
+```sh
+age-keygen -o age-key.txt
+kubectl create namespace sops
+kubectl -n sops create secret generic sops-age-key --from-file=keys.txt=age-key.txt
+```
+
+Save `age-key.txt` somewhere durable outside git (a password manager) - it's
+the only way to decrypt or re-encrypt anything under `dev/manifests/secrets/`
+in the future. Put the `# public key:` line `age-keygen` printed into
+`.sops.yaml`'s `age:` field so `sops -e` encrypts against it.
+
+### Editing an encrypted secret
+
+```sh
+export SOPS_AGE_KEY_FILE=/path/to/age-key.txt   # or ~/.config/sops/age/keys.txt
+sops argocd/dev/manifests/secrets/authentik-config.yaml
+```
+
+`sops` decrypts to a scratch file, opens your `$EDITOR`, and re-encrypts on
+save - the ciphertext in git never needs manual handling. To add a brand new
+`SopsSecret`, write it as plaintext YAML first, then run
+`sops --encrypt --in-place <file>` once.
 
 ## Bootstrap procedure
 
@@ -126,18 +215,18 @@ Every Application manifest in `dev/apps/` and every
 forked or moved to a different remote, update `repoURL` in all of these
 manifests to match — find every occurrence with `grep -rl 'repoURL:' argocd`.
 
-NOTE: The Applications `alloy`, `kube-prometheus-stack`, and `loki` set
-`targetRevision` to the placeholder `REPLACE_ME`. These three charts
-already run in the dev cluster from a manual `helm install`. Find the
-installed version with `helm list -n monitoring`. Set `targetRevision`
-to that exact version before you enable sync for these Applications.
-This step stops ArgoCD from upgrading a running Prometheus, Grafana,
-or Loki release without warning.
-
 NOTE: `dev/values/kube-prometheus-stack-values.yaml` sets
 `grafana.adminPassword` to the placeholder value
 `dev-admin-changeme`. Replace this value with a real secret before
 you use this configuration outside development.
+
+NOTE: `authentik`, `secrets`, and `argocd-config` need the
+`sops-secrets-operator` Application synced first, and that operator needs
+the `sops-age-key` Secret bootstrapped by hand - see [Secrets
+management](#secrets-management)'s "Bootstrapping" steps. Until that Secret
+exists, `sops-secrets-operator`'s pod runs fine but every `SopsSecret`
+fails to decrypt, and authentik's pods sit in `ContainerCreating` waiting on
+Secrets that never appear.
 
 NOTE: The `cluster-issuers` Application needs cert-manager and a
 secret named `cloudflare-api-token` already in the cluster. Install
@@ -152,7 +241,10 @@ Application. MetalLB itself is not tracked as an Application yet.
 
 ArgoCD, cert-manager, MetalLB, Traefik, and Headlamp already run in
 the dev cluster. The Applications above depend on them, but each one
-was installed by hand and is not yet tracked as an Application itself.
-Bring each one under GitOps the same way as the Applications above,
-with a chart and a values file, or with raw manifests, once you know
-its currently installed chart version.
+was installed by hand and is not yet tracked as an Application itself
+— except ArgoCD's `argocd-cm`/`argocd-rbac-cm` ConfigMaps, which
+`argocd-config` now patches (see [SSO / authentik](#sso--authentik));
+the rest of the ArgoCD install is still untracked. Bring each one
+under GitOps the same way as the Applications above, with a chart and
+a values file, or with raw manifests, once you know its currently
+installed chart version.

@@ -1,0 +1,10 @@
+# SOPS encryption rules for this repo. Encrypts only the `data`/`stringData`
+# values inside SopsSecret manifests under argocd/dev/manifests/secrets/ -
+# everything else in those files (name, namespace, labels, the `kind:
+# SopsSecret` wrapper itself) stays plaintext so diffs and reviews stay
+# readable. Decrypted in-cluster by the sops-secrets-operator Application -
+# see argocd/README.md's "Secrets management" section.
+creation_rules:
+  - path_regex: argocd/.*/manifests/secrets/.*\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: age123a34n040z2zmwr35yst0ykf3ejnv7f6up6r9kqg9vafsd8rdv6s79cyap

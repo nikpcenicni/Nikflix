@@ -1,0 +1,33 @@
+# Authentik identity provider, values in ../values/authentik-values.yaml.
+# Provides SSO (OAuth2/OIDC) for the other system apps in this cluster - see
+# the authentik-blueprints ConfigMap in that values file for the provider,
+# application, and RBAC group config it creates for Grafana and ArgoCD.
+# Depends on sops-secrets-operator (see sops-secrets-operator.yaml) and the
+# secrets Application having synced first, for authentik-config and
+# authentik-postgresql-secret to exist.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://charts.goauthentik.io
+      chart: authentik
+      targetRevision: 2026.5.6
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/authentik-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
