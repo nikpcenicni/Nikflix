@@ -26,23 +26,27 @@ argocd/
 │   ├── apps/
 │   │   ├── alloy.yaml
 │   │   ├── authentik.yaml
+│   │   ├── external-dns.yaml
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
 │   │   ├── sops-secrets-operator.yaml
 │   │   ├── argocd-config.yaml
 │   │   ├── cluster-issuers.yaml
+│   │   ├── coredns.yaml
 │   │   ├── ingress-apps.yaml
 │   │   ├── metallb-pool.yaml
 │   │   └── secrets.yaml
 │   ├── values/
 │   │   ├── alloy-values.yaml
 │   │   ├── authentik-values.yaml
+│   │   ├── external-dns-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   ├── loki-values.yaml
 │   │   └── sops-secrets-operator-values.yaml
 │   └── manifests/
 │       ├── argocd-config/
 │       ├── cluster-issuers/
+│       ├── coredns/
 │       ├── ingress-apps/
 │       ├── metallb-pool/
 │       └── secrets/            # SOPS-encrypted SopsSecret resources - see "Secrets management" below
@@ -69,14 +73,16 @@ between clusters — see [shared/README.md](shared/README.md). Populate
 The child Applications in each cluster's `apps/` split into two
 groups:
 
-- **Helm-chart Applications** (`alloy`, `authentik`, `kube-prometheus-stack`,
-  `loki`, `sops-secrets-operator` in `dev/`) each use two sources: a Helm
-  chart from an upstream chart repository, and this git repository for the
-  matching values file in that cluster's `values/`. ArgoCD calls this a
+- **Helm-chart Applications** (`alloy`, `authentik`, `external-dns`,
+  `kube-prometheus-stack`, `loki`, `sops-secrets-operator` in `dev/`) each
+  use two sources: a Helm chart from an upstream chart repository, and this
+  git repository for the matching values file in that cluster's `values/`.
+  ArgoCD calls this a
   [multi-source Application](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/).
 - **Raw-manifest Applications** (`argocd-config`, `cluster-issuers`,
-  `ingress-apps`, `metallb-pool`, `secrets` in `dev/`) each use one source: a
-  directory of plain Kubernetes manifests under that cluster's `manifests/`.
+  `coredns`, `ingress-apps`, `metallb-pool`, `secrets` in `dev/`) each use
+  one source: a directory of plain Kubernetes manifests under that
+  cluster's `manifests/`.
 
 ## Applications (dev)
 
@@ -84,6 +90,7 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). Depends on `sops-secrets-operator` and `secrets` having synced first. |
+| `external-dns` | Helm chart `external-dns` from the official external-dns chart repository, values in `dev/values/external-dns-values.yaml` | `external-dns` | Watches Ingress resources cluster-wide and auto-creates/updates matching `*.lab.pcenicni.dev` records in pi-hole's custom DNS list - see [DNS / external-dns](#dns--external-dns). Depends on `sops-secrets-operator` and `secrets` having synced first. |
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
@@ -92,7 +99,7 @@ groups:
 | `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve the four `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
 | `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
 | `metallb-pool` | Raw manifests in `dev/manifests/metallb-pool/` | `metallb-system` | MetalLB `IPAddressPool` and `L2Advertisement` resources. These resources give MetalLB the address range `192.168.10.240`–`192.168.10.245` to assign to `LoadBalancer` services. |
-| `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, and ArgoCD's OIDC/database credentials - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
+| `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, and ArgoCD's OIDC/database credentials, and pi-hole's API password - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
 
 Every Application above uses automated sync with `prune: true` and
 `selfHeal: true`. This setting means ArgoCD applies matching changes
@@ -139,6 +146,37 @@ onboarded as a tracked Application at all - see "Applications not yet
 onboarded" below). Until both of those happen, Headlamp keeps working the
 same way it does today (in-cluster service account), unaffected by
 authentik's presence.
+
+## DNS / external-dns
+
+`coredns` (above) makes hostnames resolve correctly *from inside* the
+cluster. `external-dns` handles the other direction: it watches every
+Ingress resource cluster-wide and keeps pi-hole's custom DNS list in sync,
+so a LAN client (a browser, `curl`, another machine) gets a working record
+for a new `*.lab.pcenicni.dev` hostname without anyone adding it to pi-hole
+by hand - which is how `auth.lab.pcenicni.dev` almost didn't work the first
+time authentik was added (see [Configuring the authentik admin
+account](#configuring-the-authentik-admin-account) - that was fixed by hand
+before external-dns existed).
+
+Only one pi-hole exists today (`192.168.1.127` - see
+`dev/values/external-dns-values.yaml`), even though the network has three
+(see the root [README.md](../README.md)'s port mapping table). When the
+other two join a synced pi-hole setup, update `pihole-server` to whichever
+one becomes the source of truth - external-dns only writes to one target at
+a time, so the sync mechanism between pi-holes (not this repo) is what
+propagates records to the rest.
+
+`policy: upsert-only` is deliberate, not a default left alone: this pi-hole
+already has many hand-managed custom DNS entries for the rest of the home
+lab (NAS, other VMs, non-Kubernetes services). external-dns only ever
+creates or updates records for hosts it currently sees on a
+`lab.pcenicni.dev` Ingress (`domainFilters`) - it never deletes anything,
+even a stale record for an Ingress that's since been removed. Clean those up
+by hand in pi-hole if that ever matters; the alternative (`policy: sync`)
+risks deleting hand-managed records pi-hole has no way to tell apart from
+ones external-dns created, since pi-hole's DNS API has no per-record
+ownership tracking to begin with (`registry: noop`).
 
 ## Configuring the authentik admin account
 
@@ -303,6 +341,12 @@ an Application yet.
 NOTE: The `metallb-pool` Application needs MetalLB already installed
 in the cluster. Install MetalLB by hand before you sync this
 Application. MetalLB itself is not tracked as an Application yet.
+
+NOTE: `dev/values/external-dns-values.yaml` hardcodes pi-hole's current IP
+(`192.168.1.127`) as `pihole-server`, and needs "Permit destructive actions
+via API" reachable/working on that pi-hole for record writes to succeed
+(see [DNS / external-dns](#dns--external-dns)). If the pi-hole this points
+at is ever replaced or re-IP'd, update `pihole-server` to match.
 
 ## Applications not yet onboarded
 
