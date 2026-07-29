@@ -1,0 +1,19 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+
+# talosctl-generated cluster secrets (CA keys, client certs, tokens) and the
+# admin kubeconfig - never commit these, they grant full cluster control.
+talos/controlplane.yaml
+talos/worker.yaml
+talos/talosconfig
+talos/kubeconfig
+crash.log
+crash.*.log
+*.tfvars
+!terraform.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

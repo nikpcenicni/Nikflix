@@ -1,0 +1,8 @@
+machine:
+  install:
+    image: ghcr.io/siderolabs/installer:v1.13.7
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+auto: "off"
+hostname: talos-dev-worker-argon
