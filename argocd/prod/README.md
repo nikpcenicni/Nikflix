@@ -1,15 +1,20 @@
-# Prod apps
+# Production Applications
 
-Same layout as `../dev/`, for the production cluster once it exists:
+This directory holds the Applications specific to the production
+cluster, once that cluster exists. This directory mirrors the layout of
+[../dev/](../dev):
 
 ```
 prod/
-├── apps/         # child Applications, discovered by bootstrap/root-app-prod.yaml
-├── values/       # Helm values, one file per chart-backed app
-└── manifests/    # raw manifests, one directory per non-Helm app
+├── apps/         # child Applications, read by bootstrap/root-app-prod.yaml
+├── values/       # Helm values, one file per chart-backed Application
+└── manifests/    # raw manifests, one directory per non-Helm Application
 ```
 
-Empty scaffold — the production Talos cluster this would run on hasn't
-been provisioned yet (see `../../terraform/README.md`). Populate this
-once that cluster is up, following the pattern in `../dev/` (and
-`../README.md`'s note on chart-backed vs raw-manifest apps).
+This directory is an empty scaffold. The production Talos cluster that
+would run these Applications does not exist yet — see
+[../../terraform/README.md](../../terraform/README.md). Populate this
+directory after that cluster is up. Follow the pattern in
+[../dev/](../dev), and see [../README.md](../README.md) for the
+difference between a chart-backed Application and a raw-manifest
+Application.

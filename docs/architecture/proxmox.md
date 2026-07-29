@@ -1,8 +1,8 @@
 # Proxmox Cluster Architecture
 
-Cluster name: **`noble`** — nodes are named after noble gases, in periodic
-table order. 3 nodes are active today; 3 more are planned, continuing the
-naming convention.
+The cluster name is `noble`. Node names come from noble gases, in periodic
+table order. Today, 3 nodes are active. 3 more nodes are planned. The
+planned nodes continue the same naming convention.
 
 | Node | Element | Status | Management (VLAN 10) | Corosync (VLAN 100) | Storage (VLAN 80) |
 |------|---------|--------|-----------------------|----------------------|--------------------|
@@ -13,11 +13,12 @@ naming convention.
 | xenon | Xe | planned | 192.168.10.50 | 10.10.100.50 | 192.168.80.50 |
 | radon | Rn | planned | 192.168.10.60 | 10.10.100.60 | 192.168.80.60 |
 
-The "planned" IPs above just continue the existing `.10 / .20 / .30 / ...`
-pattern - they aren't reserved anywhere yet. Before provisioning a new
-node, reserve its three IPs in UniFi (see
-[Notable design decisions](#notable-design-decisions--lessons-learned))
-and add matching entries to `inventory/hosts.yml` and
+The planned IP addresses in the table above continue the existing
+`.10` / `.20` / `.30` pattern. The repo does not reserve these IP
+addresses yet. Before you provision a new node, reserve its three IP
+addresses in UniFi (see
+[Notable design decisions](#notable-design-decisions--lessons-learned)).
+Then add matching entries to `inventory/hosts.yml` and
 `inventory/host_vars/`.
 
 ## Cluster membership
@@ -39,27 +40,33 @@ graph TB
     class Kr,Xe,Rn planned
 ```
 
-Node IDs are assigned by `pvecm` in join order, not by naming convention -
-helium is node 1 because it's `groups['noble'][0]` in the inventory (the
-founder); argon ended up 2 and neon 3 purely because of which node's
-`pvecm add` happened to complete first during the initial cluster
-formation, not alphabetical or periodic-table order.
+The `pvecm` command assigns node IDs in join order, not by the naming
+convention. Helium is node 1 because it is `groups['noble'][0]` in the
+inventory. The inventory marks helium as the founder node. Argon became
+node 2 and neon became node 3. This order depended only on which node's
+`pvecm add` command finished first during the initial cluster formation.
+The order does not follow alphabetical or periodic table order.
 
-At 6 nodes, `votequorum` sets `expected_votes` and `quorum` automatically
-(currently 3 votes / quorum 2). **Worth planning for:** an even node count
-has a weaker quorum property than odd - a 3-3 network partition has no
-majority on either side, so both halves lose quorum and fence their guests.
-Proxmox's usual mitigation is a **QDevice** (a lightweight external
-tie-breaker, e.g. a Raspberry Pi or small VM outside the cluster) rather
-than a 7th full node - worth adding once krypton/xenon/radon bring the
-count to 6, not something the current playbooks set up.
+At 6 nodes, the `votequorum` service sets `expected_votes` and `quorum`
+automatically. Currently the cluster has 3 votes and a quorum of 2.
+
+NOTE: An even node count has a weaker quorum property than an odd node
+count. In a 3-3 network partition, neither side has a majority. Both
+halves lose quorum and fence their guests.
+
+Proxmox's usual solution is a quorum device (QDevice). A QDevice is a
+lightweight external tie-breaker, such as a Raspberry Pi or a small
+Virtual Machine (VM) outside the cluster. A QDevice is a better solution
+than a seventh full node. Plan to add a QDevice once krypton, xenon, and radon bring the
+node count to 6. The current playbooks do not set up a QDevice.
 
 ## Per-node network layout
 
-Each node has 3 physical NICs, each dedicated to one isolated network - no
-VM/CT traffic runs on any of them today (`vmbr0` on `nic1` is where VM
-bridges would attach, but no VLANs beyond the native management one are
-currently defined on it).
+Each node has 3 physical Network Interface Cards (NICs). Each NIC connects
+to one isolated network. Today, no Virtual Machine (VM) or container
+traffic runs on any of these NICs. `vmbr0` on `nic1` is where VM bridges
+would attach. However, the config does not define any Virtual Local Area
+Network (VLAN) beyond the native management VLAN on it.
 
 ```mermaid
 graph LR
@@ -76,12 +83,12 @@ graph LR
     nic2 -->|"native VLAN 80<br/>no bridge, no gateway"| storage[("Storage network<br/>192.168.80.0/24")]
 ```
 
-All three VLANs (10, 80, 100) turned out to be **native/untagged** on their
-respective switch ports, not 802.1Q tagged - confirmed with `tcpdump` for
-both the corosync and storage links (see
+All three VLANs (10, 80, and 100) are native and untagged on their switch
+ports, not 802.1Q tagged. A `tcpdump` capture on both the corosync and
+storage links confirmed this (see
 [Notable design decisions](#notable-design-decisions--lessons-learned)).
-Config for `nic0`/`nic2` puts the IP directly on the interface; no `.VLAN`
-sub-interfaces are used.
+The config for `nic0` and `nic2` puts the IP address directly on the
+interface. The config does not use `.VLAN` sub-interfaces.
 
 ## Physical switching
 
@@ -123,19 +130,23 @@ graph TB
     Ar2 --- FlexStorage
 ```
 
-Each of the three networks has fully dedicated switching hardware - no two
-networks share a switch, and none of them cross an inter-switch link to
-reach another node on the same network. All three nodes' 1GbE NICs
-(`nic0`, corosync) plug directly into the Cloud Gateway Fiber's own switch
-ports; management (`nic1`) has its own Flex switch, storage (`nic2`) has a
-second, separate Flex switch. All three devices are part of the same
-UniFi-managed network (hence the live gateway/mDNS reflection noted
-below), but no switching hardware is shared between networks.
+Each of the three networks has its own dedicated switching hardware. No
+two networks share a switch. No network crosses an inter-switch link to
+reach another node on the same network. All three nodes' 1 Gigabit
+Ethernet (1GbE) NICs (`nic0`, corosync) plug directly into the Cloud
+Gateway Fiber's own switch ports. The management network (`nic1`) has its
+own Flex switch. The storage network (`nic2`) has a second, separate Flex
+switch. All three devices belong to the same UniFi-managed network. This
+shared network is why the live gateway and multicast Domain Name System
+(mDNS) reflection occur (see
+[Notable design decisions](#notable-design-decisions--lessons-learned)).
+However, no network shares switching hardware with another network.
 
 ## Corosync link redundancy
 
-`cluster.yml` configures corosync with two links per node, so a problem
-with the dedicated corosync NIC/VLAN/switch port doesn't cost quorum:
+The `cluster.yml` playbook configures corosync with two links per node.
+With this design, a problem with the dedicated corosync NIC, VLAN, or
+switch port does not cost the cluster quorum:
 
 ```mermaid
 graph LR
@@ -151,10 +162,12 @@ graph LR
     A1 -.->|"link1 (fallback)"| B1
 ```
 
-`link0` is the dedicated, otherwise-idle corosync network - low latency,
-nothing else competing for it. `link1` piggybacks on the management
-network as a fallback; it's shared with SSH/API/GUI traffic, which is why
-it's the fallback and not the primary.
+`link0` is the dedicated, otherwise idle corosync network. It has low
+latency because no other traffic competes for it. `link1` uses the
+management network as a fallback link. The management network also
+carries Secure Shell (SSH), Application Programming Interface (API), and
+Graphical User Interface (GUI) traffic. This is why `link1` is the
+fallback link, not the primary link.
 
 ## Ansible automation pipeline
 
@@ -171,15 +184,17 @@ flowchart TD
     Uncluster["uncluster.yml<br/>(separate, guarded by uncluster_confirm)"] -.->|reverses| Cluster
 ```
 
-Each stage is tagged (`ssh_bootstrap`, `update`, `harden`, `network`,
-`cluster`) so `bootstrap.yml` can run end-to-end on fresh nodes, or be
-re-entered at any single stage (`--tags network`, `--skip-tags
-ssh_bootstrap`, etc). See `ansible/README.md` for the full command
-reference and per-stage caveats.
+Each stage carries a tag: `ssh_bootstrap`, `update`, `harden`, `network`,
+or `cluster`. These tags let `bootstrap.yml` run end-to-end on fresh
+nodes. The tags also let you re-enter the playbook at a single stage, for
+example with `--tags network` or `--skip-tags ssh_bootstrap`. See
+`ansible/README.md` for the full command reference and the caveats for
+each stage.
 
 ## Cluster formation sequence
 
-What happens inside `cluster.yml` when a new node joins:
+This sequence shows what happens inside `cluster.yml` when a new node
+joins the cluster:
 
 ```mermaid
 sequenceDiagram
@@ -202,64 +217,74 @@ sequenceDiagram
     Ctrl->>Joiner: verify pvecm status shows Quorate: Yes
 ```
 
-`pvecm add`/`pvecm create` are chained with a check that
-`/etc/pve/corosync.conf` actually exists afterward and retried if not -
-both have been observed to exit `0` while silently failing a step. The
-whole join play uses `any_errors_fatal: true` and `serial: 1`, so one
-node's failure halts before the next node attempts anything against
+The playbook chains `pvecm add` and `pvecm create` with a check for the
+file `/etc/pve/corosync.conf` afterward. If the file does not exist, the
+playbook retries the command. Both commands have exited with status `0`
+while a step silently failed. The whole join play uses
+`any_errors_fatal: true` and `serial: 1`. With this setting, one node's
+failure halts the playbook before the next node acts against an
 unconfirmed cluster state.
 
 ## Extending to 6 nodes
 
-1. Rack/cable the new node the same way as the existing three: 1GbE onto
-   the corosync VLAN's switch port, one 2.5GbE onto the management VLAN,
-   the second 2.5GbE onto the storage VLAN.
-2. Reserve its 3 IPs (management/corosync/storage) in UniFi, outside DHCP
-   range, matching the table at the top of this doc.
-3. Add it to `inventory/hosts.yml` under the `noble` group, and create
+1. Rack and cable the new node the same way as the existing three nodes.
+   Connect the 1GbE port to the corosync VLAN's switch port. Connect one
+   2.5GbE port to the management VLAN. Connect the second 2.5GbE port to
+   the storage VLAN.
+2. Reserve its 3 IP addresses (management, corosync, and storage) in
+   UniFi, outside the Dynamic Host Configuration Protocol (DHCP) range.
+   Match the table at the top of this document.
+3. Add the node to `inventory/hosts.yml` under the `noble` group. Create
    `inventory/host_vars/<name>.yml` with `pve_corosync_ip` and
-   `pve_storage_ip` (copy an existing host's file as a template).
-4. Run `ansible-playbook playbooks/bootstrap.yml -l <name>` to bring just
-   the new node through SSH bootstrap → update → harden → network, then
-   `ansible-playbook playbooks/cluster.yml` (no `-l`, needs the whole
-   group) to join it - `cluster.yml` only acts on nodes that aren't
-   already in the cluster, so existing nodes are left alone.
-5. Once at 6 nodes, revisit the QDevice note above.
+   `pve_storage_ip`. Copy an existing host's file as a template.
+4. Run `ansible-playbook playbooks/bootstrap.yml -l <name>` to bring only
+   the new node through the SSH bootstrap, update, harden, and network
+   stages. Then run `ansible-playbook playbooks/cluster.yml` (without
+   `-l`, since this stage needs the whole group) to join the node to the
+   cluster. The `cluster.yml` playbook only acts on nodes that are not
+   already in the cluster, so it leaves existing nodes alone.
+5. Once the cluster reaches 6 nodes, revisit the QDevice note in
+   [Cluster membership](#cluster-membership).
 
 ## Notable design decisions / lessons learned
 
-These came up during the actual buildout and shape why the config looks
-the way it does - worth reading before changing the network or cluster
-roles.
+These decisions came up during the actual buildout. They shape why the
+config looks the way it does. Read this section before you change the
+network or cluster roles.
 
-- **Native/untagged VLANs, not tagged trunks.** Both the corosync (VLAN
-  100) and storage (VLAN 80) switch ports turned out to send/expect
-  untagged frames, not 802.1Q-tagged ones. First attempts used tagged
-  `nic0.100`/`nic2.80` sub-interfaces and silently failed (interface up,
-  address assigned, zero connectivity) until diagnosed with `tcpdump -e`
-  on the raw interface. Confirm framing with `tcpdump` before assuming a
-  switch port's tagging mode.
+- **Native and untagged VLANs, not tagged trunks.** Both the corosync
+  (VLAN 100) and storage (VLAN 80) switch ports send and expect untagged
+  frames, not 802.1Q-tagged frames. The first attempts used tagged
+  `nic0.100` and `nic2.80` sub-interfaces. These attempts failed silently:
+  the interface stayed up, it received an address, but no connectivity
+  worked. A `tcpdump -e` capture on the raw interface diagnosed the fault.
+  Confirm the framing with `tcpdump` before you assume a switch port's
+  tagging mode.
 - **Shared with existing UniFi infrastructure.** The corosync and storage
-  VLANs aren't freshly isolated segments - they're carved out of an
-  existing UniFi home network, each with a live gateway (`.1`) doing
-  IGMP/mDNS reflection. DHCP was disabled on both subnets for the reserved
-  node IPs to avoid collisions; the same needs doing for any new subnet
-  used by future nodes.
-- **`helium`'s installer gap.** The Proxmox installer creates
+  VLANs are not freshly isolated segments. Both VLANs come from an
+  existing UniFi home network. Each VLAN has a live gateway (`.1`) that
+  performs Internet Group Management Protocol (IGMP) and mDNS reflection.
+  Both subnets turn off DHCP for the reserved node IP addresses, to avoid
+  address collisions. Disable DHCP the same way on any new subnet used by
+  future nodes.
+- **Helium's installer gap.** The Proxmox installer creates
   `/usr/local/lib/systemd/network/50-pmx-nic{0,1,2}.link` files to pin NIC
-  names by MAC address. helium's installer never created the `nic2` entry
-  (likely the USB dongle wasn't detected at install time) - fixed via
-  `pve_nic2_mac_override` in its host_vars, which deploys a matching
-  `.link` file and renames the live interface immediately. Worth checking
-  for on any new node before assuming `nic0`/`nic1`/`nic2` naming is
+  names to MAC addresses. Helium's installer never created the `nic2`
+  entry, likely because the installer did not detect the Universal Serial
+  Bus (USB) dongle at install time. The fix uses `pve_nic2_mac_override`
+  in helium's host_vars file. This override deploys a matching `.link`
+  file and renames the live interface immediately. Check for this gap on
+  any new node before you assume `nic0`, `nic1`, and `nic2` naming is
   consistent.
-- **`pvecm add`/`create` can exit 0 having silently failed.** Observed
-  directly during initial cluster formation: the command returned success
-  but `/etc/pve/corosync.conf` was never created. Both commands are now
-  chained with `&& test -f /etc/pve/corosync.conf` and retried on that,
-  not on the command's own exit code.
-- **`any_errors_fatal` matters with `serial: 1`.** Without it, a failure
-  on one node in a serial batch doesn't stop Ansible from moving on to the
-  next node - which is how the initial cluster join ended up with two
-  nodes attempting to join against an unconfirmed cluster state. Both
-  `cluster.yml` and `uncluster.yml` set it.
+- **`pvecm add` and `pvecm create` can exit with status 0 after a silent
+  failure.** During the initial cluster formation, one of these commands
+  returned success, but it never created `/etc/pve/corosync.conf`. Both
+  commands are now chained with `&& test -f /etc/pve/corosync.conf`. The
+  playbook retries based on this file check, not on the command's own
+  exit code.
+- **`any_errors_fatal` matters with `serial: 1`.** Without
+  `any_errors_fatal`, a failure on one node in a serial batch does not
+  stop Ansible from moving on to the next node. This gap caused the
+  initial cluster join to end up with two nodes attempting to join
+  against an unconfirmed cluster state. Both `cluster.yml` and
+  `uncluster.yml` set `any_errors_fatal`.

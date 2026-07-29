@@ -41,7 +41,7 @@ variable "iso_storage" {
 }
 
 variable "vm_storage" {
-  description = "Proxmox storage ID backing VM boot disks, EFI disks, and the 'Longhorn' data disk. Unlike ../terraform's target-state config, this dev cluster deliberately keeps every disk on local-lvm rather than a dedicated per-node SSD pool - see the README for why."
+  description = "Proxmox storage ID backing VM boot disks, EFI disks, and the 'Longhorn' data disk. Unlike ../../terraform's target-state config, this dev cluster deliberately keeps every disk on local-lvm rather than a dedicated per-node SSD pool - see the README for why."
   type        = string
   default     = "local-lvm"
 }
