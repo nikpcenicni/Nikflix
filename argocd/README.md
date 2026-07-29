@@ -25,20 +25,16 @@ argocd/
 ├── dev/                       # Applications specific to the development cluster
 │   ├── apps/
 │   │   ├── alloy.yaml
-│   │   ├── authentik.yaml
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
-│   │   ├── argocd-config.yaml
 │   │   ├── cluster-issuers.yaml
 │   │   ├── ingress-apps.yaml
 │   │   └── metallb-pool.yaml
 │   ├── values/
 │   │   ├── alloy-values.yaml
-│   │   ├── authentik-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   └── loki-values.yaml
 │   └── manifests/
-│       ├── argocd-config/
 │       ├── cluster-issuers/
 │       ├── ingress-apps/
 │       └── metallb-pool/
