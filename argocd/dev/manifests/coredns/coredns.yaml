@@ -1,0 +1,62 @@
+# Patches the coredns ConfigMap that Talos's own bootstrap manifests
+# installed in kube-system (owned by Talos's bootstrap-manifests-inventory,
+# not by an Application - same pattern as ../argocd-config/'s relationship
+# to the ArgoCD install).
+#
+# Pods inside this cluster need *.lab.pcenicni.dev to resolve to Traefik's
+# in-cluster LoadBalancer IP (192.168.10.240), the same as it does on the
+# LAN. Without this, CoreDNS's default `forward . /etc/resolv.conf` sends
+# these queries to whatever DNS server the Talos node itself uses - which,
+# unlike client machines on the LAN's own pi-hole, has no split-horizon
+# override for pcenicni.dev, so it resolves to the domain's public IP
+# instead. Any pod calling back into the cluster via one of these hostnames
+# (e.g. Grafana's OIDC token exchange, ArgoCD's OIDC callback validation)
+# would otherwise reach the wrong server entirely - see the "SSO / authentik"
+# section of ../../../README.md.
+#
+# The `hosts` plugin below intercepts just these four names before the
+# `forward` directive gets them; everything else still goes upstream via
+# `fallthrough`. CoreDNS's `reload` plugin (already in the Corefile) picks up
+# ConfigMap changes automatically, typically within ~30s, without a pod
+# restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+            lameduck 5s
+        }
+        ready
+        log . {
+            class error
+        }
+        prometheus :9153
+
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+            pods insecure
+            fallthrough in-addr.arpa ip6.arpa
+            ttl 30
+        }
+        hosts {
+            192.168.10.240 auth.lab.pcenicni.dev
+            192.168.10.240 argocd.lab.pcenicni.dev
+            192.168.10.240 grafana.lab.pcenicni.dev
+            192.168.10.240 headlamp.lab.pcenicni.dev
+            fallthrough
+        }
+        forward . /etc/resolv.conf {
+           max_concurrent 1000
+        }
+        cache 30 {
+           disable success cluster.local
+           disable denial cluster.local
+        }
+        loop
+        reload
+        loadbalance
+    }
