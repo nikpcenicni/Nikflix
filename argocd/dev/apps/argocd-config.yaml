@@ -1,0 +1,24 @@
+# Raw manifests patching the argocd-cm and argocd-rbac-cm ConfigMaps that
+# ArgoCD's own install created by hand - ../manifests/argocd-config/. Wires
+# up OIDC login against authentik and maps authentik RBAC groups to ArgoCD's
+# built-in roles. ArgoCD is not itself tracked as an Application yet (see
+# ../../README.md's "Applications not yet onboarded"); this Application only
+# owns these two ConfigMaps, not the rest of the ArgoCD install.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-config
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/argocd-config
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -69,3 +69,27 @@ spec:
                 name: kube-prometheus-stack-grafana
                 port:
                   number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: authentik
+  namespace: authentik
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["auth.lab.pcenicni.dev"]
+      secretName: authentik-tls
+  rules:
+    - host: auth.lab.pcenicni.dev
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: authentik-server
+                port:
+                  name: http
