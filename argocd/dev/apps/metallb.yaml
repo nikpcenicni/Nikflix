@@ -1,0 +1,33 @@
+# MetalLB - assigns LoadBalancer IPs on bare metal. Previously installed by
+# hand (see ../../README.md's former "Applications not yet onboarded"
+# note); brought under GitOps at the same chart version already live
+# (metallb-0.16.1), so this sync is a no-op against the running cluster.
+# The metallb-pool Application (IPAddressPool/L2Advertisement resources)
+# depends on this one.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://metallb.github.io/metallb
+      chart: metallb
+      targetRevision: 0.16.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/metallb-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

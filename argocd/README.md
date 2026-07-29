@@ -26,10 +26,14 @@ argocd/
 │   ├── apps/
 │   │   ├── alloy.yaml
 │   │   ├── authentik.yaml
+│   │   ├── cert-manager.yaml
 │   │   ├── external-dns.yaml
+│   │   ├── headlamp.yaml
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
+│   │   ├── metallb.yaml
 │   │   ├── sops-secrets-operator.yaml
+│   │   ├── traefik.yaml
 │   │   ├── argocd-config.yaml
 │   │   ├── cluster-issuers.yaml
 │   │   ├── coredns.yaml
@@ -39,10 +43,14 @@ argocd/
 │   ├── values/
 │   │   ├── alloy-values.yaml
 │   │   ├── authentik-values.yaml
+│   │   ├── cert-manager-values.yaml
 │   │   ├── external-dns-values.yaml
+│   │   ├── headlamp-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   ├── loki-values.yaml
-│   │   └── sops-secrets-operator-values.yaml
+│   │   ├── metallb-values.yaml
+│   │   ├── sops-secrets-operator-values.yaml
+│   │   └── traefik-values.yaml
 │   └── manifests/
 │       ├── argocd-config/
 │       ├── cluster-issuers/
@@ -90,10 +98,14 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). Depends on `sops-secrets-operator` and `secrets` having synced first. |
+| `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `external-dns` | Helm chart `external-dns` from the official external-dns chart repository, values in `dev/values/external-dns-values.yaml` | `external-dns` | Watches Ingress resources cluster-wide and auto-creates/updates matching `*.lab.pcenicni.dev` records in pi-hole's custom DNS list - see [DNS / external-dns](#dns--external-dns). Depends on `sops-secrets-operator` and `secrets` having synced first. |
+| `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). Not yet SSO-wired - see [SSO / authentik](#sso--authentik). |
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
+| `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
 | `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
+| `traefik` | Helm chart `traefik` from the official traefik chart repository, values in `dev/values/traefik-values.yaml` | `traefik` | Ingress controller. Brought under GitOps at the chart version already running (`traefik-41.0.2`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `ingress-apps` routes through this. Syncs with `ServerSideApply=true`. |
 | `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm` and `argocd-rbac-cm` ConfigMaps that ArgoCD's own (by-hand) install created. Wires up OIDC login against authentik and maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles. |
 | `cluster-issuers` | Raw manifests in `dev/manifests/cluster-issuers/` | `cert-manager` | cert-manager `ClusterIssuer` resources. The manifests define a Let's Encrypt staging issuer and a Let's Encrypt production issuer, both through a Cloudflare DNS-01 challenge for the `pcenicni.dev` zone. |
 | `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve the four `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
@@ -320,11 +332,6 @@ Every Application manifest in `dev/apps/` and every
 forked or moved to a different remote, update `repoURL` in all of these
 manifests to match — find every occurrence with `grep -rl 'repoURL:' argocd`.
 
-NOTE: `dev/values/kube-prometheus-stack-values.yaml` sets
-`grafana.adminPassword` to the placeholder value
-`dev-admin-changeme`. Replace this value with a real secret before
-you use this configuration outside development.
-
 NOTE: `authentik`, `secrets`, and `argocd-config` need the
 `sops-secrets-operator` Application synced first, and that operator needs
 the `sops-age-key` Secret bootstrapped by hand - see [Secrets
@@ -333,14 +340,13 @@ exists, `sops-secrets-operator`'s pod runs fine but every `SopsSecret`
 fails to decrypt, and authentik's pods sit in `ContainerCreating` waiting on
 Secrets that never appear.
 
-NOTE: The `cluster-issuers` Application needs cert-manager and a
-secret named `cloudflare-api-token` already in the cluster. Install
-both by hand before you sync this Application. Neither is tracked as
-an Application yet.
+NOTE: The `cluster-issuers` Application needs the `cert-manager` Application
+synced first (for the CRDs and controller), and a secret named
+`cloudflare-api-token` already in the cluster (see [Secrets
+management](#secrets-management)).
 
-NOTE: The `metallb-pool` Application needs MetalLB already installed
-in the cluster. Install MetalLB by hand before you sync this
-Application. MetalLB itself is not tracked as an Application yet.
+NOTE: The `metallb-pool` Application needs the `metallb` Application synced
+first, for MetalLB's CRDs and controller.
 
 NOTE: `dev/values/external-dns-values.yaml` hardcodes pi-hole's current IP
 (`192.168.1.127`) as `pihole-server`, and needs "Permit destructive actions
@@ -348,14 +354,20 @@ via API" reachable/working on that pi-hole for record writes to succeed
 (see [DNS / external-dns](#dns--external-dns)). If the pi-hole this points
 at is ever replaced or re-IP'd, update `pihole-server` to match.
 
-## Applications not yet onboarded
+## Applications brought under GitOps
 
-ArgoCD, cert-manager, MetalLB, Traefik, and Headlamp already run in
-the dev cluster. The Applications above depend on them, but each one
-was installed by hand and is not yet tracked as an Application itself
-— except ArgoCD's `argocd-cm`/`argocd-rbac-cm` ConfigMaps, which
-`argocd-config` now patches (see [SSO / authentik](#sso--authentik));
-the rest of the ArgoCD install is still untracked. Bring each one
-under GitOps the same way as the Applications above, with a chart and
-a values file, or with raw manifests, once you know its currently
-installed chart version.
+cert-manager, MetalLB, Traefik, and Headlamp were all originally installed
+by hand, before this repo tracked them as Applications. Each is now
+onboarded (`cert-manager`, `metallb`, `traefik`, `headlamp` in the table
+above), pinned to the exact chart version already running, so onboarding
+was a no-op sync against the live cluster rather than a redeploy. Each is
+a plain Helm-chart Application, the same pattern as `alloy` or
+`kube-prometheus-stack` - see [Helm-chart Applications](#applications-dev)
+above. Their values files reproduce exactly what
+`helm get values <release> -n <namespace>` showed for the by-hand install,
+so the first sync changes nothing.
+
+ArgoCD's own install (the rest of it, beyond what `argocd-config` already
+manages) is still installed by hand as of this writing - bringing ArgoCD
+under GitOps means ArgoCD managing itself, which needs more care than the
+four Applications above. That's tracked separately.

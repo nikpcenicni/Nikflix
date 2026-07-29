@@ -1,0 +1,6 @@
+# cert-manager - values for the cert-manager Helm chart. See
+# ../apps/cert-manager.yaml. Matches the values already live from the
+# original by-hand `helm install`, per `helm get values cert-manager -n
+# cert-manager`.
+crds:
+  enabled: true
