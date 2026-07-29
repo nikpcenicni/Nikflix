@@ -1,0 +1,58 @@
+# Scaled down for the dev cluster's 2GB-RAM VMs - see development/README.md.
+alertmanager:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    # local-path-provisioner's plain hostPath volumes don't get fsGroup
+    # ownership applied correctly when mounted via subPath (a known
+    # local-path-provisioner/hostPath limitation, not a Talos thing) - the
+    # prometheus-db subdirectory ends up 0755 root:root instead of writable
+    # by the container's non-root user. Running as root sidesteps it; a real
+    # CSI-backed StorageClass (e.g. Longhorn) wouldn't need this.
+    securityContext:
+      runAsUser: 0
+      runAsNonRoot: false
+      fsGroup: 0
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 4Gi
+
+grafana:
+  adminPassword: dev-admin-changeme
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 1Gi
+  # Same local-path-provisioner + subPath + fsGroup limitation as Prometheus above.
+  securityContext:
+    runAsUser: 0
+    runAsNonRoot: false
+    fsGroup: 0
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false

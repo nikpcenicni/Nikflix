@@ -1,0 +1,23 @@
+# Raw ClusterIssuer CRs (cert-manager) - ../manifests/cluster-issuers/.
+# Requires cert-manager itself and the cloudflare-api-token secret to
+# already exist in-cluster (both installed by hand, not tracked here yet).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cluster-issuers
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/cluster-issuers
+  destination:
+    server: https://kubernetes.default.svc
+    # ClusterIssuer is cluster-scoped; namespace here only matters as a
+    # default for any namespaced resource this path might gain later.
+    namespace: cert-manager
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -1,0 +1,21 @@
+# Raw MetalLB IPAddressPool/L2Advertisement CRs - ../manifests/metallb-pool/.
+# Requires MetalLB itself to already exist in-cluster (installed by hand,
+# not tracked here yet).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metallb-pool
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/metallb-pool
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: metallb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

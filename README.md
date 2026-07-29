@@ -1,11 +1,29 @@
 # Nikflix
 
+This repository holds the configuration for the Nikflix home lab. The lab
+runs a Talos Linux Kubernetes cluster on Proxmox and a self-hosted media
+stack on top of it. The network in this document connects the physical
+hardware for the lab.
+
+## Repository layout
+
+| Directory | Content |
+| --------- | ------- |
+| [terraform/](terraform) | The Terraform configuration for the original, single-stage cluster. See the `NOTE:` in [terraform/README.md](terraform/README.md) for its status relative to `development/terraform/`. |
+| [ansible/](ansible) | The Ansible playbooks and roles that provision and harden the Proxmox nodes. |
+| [development/](development) | The interim development Talos cluster: Terraform for the VM shells and Talos machine configs. Start at [development/README.md](development/README.md). |
+| [argocd/](argocd) | The ArgoCD app-of-apps tree that runs on every cluster once it's up, shared between the development and production clusters via a `shared/` subdirectory plus one subdirectory per cluster (`dev/`, `prod/`). Start at [argocd/README.md](argocd/README.md). |
+| [docs/architecture/](docs/architecture) | Design documents for the target-state architecture: Proxmox host layout, the Talos cluster, and the media stack. |
 
 ## Networking
 
-### Port Mapping
+### Port mapping
 
-| Hardware | Port # | Destination Device | vLan(s) |
+The table below shows each physical port, the device connected to it, and
+the Virtual Local Area Network (VLAN) assigned to the port. An empty cell
+means the port has no connected device or no assigned VLAN.
+
+| Hardware | Port # | Destination device | VLAN |
 | -------- | ------ | ------------------ | ------- |
 | UniFi Fiber Gateway | 1 | NAS 2.5 GbE (Port 1) | |
 | UniFi Fiber Gateway | 2 | NAS 2.5 GbE (Port 2) | |

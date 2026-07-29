@@ -1,0 +1,32 @@
+# App-of-apps root for the production cluster. Scaffold only - the
+# production Talos cluster this points at does not exist yet (see
+# ../../terraform/README.md); nothing lives under argocd/prod/apps/ yet
+# either. Do not apply this until both are real. Once they are, apply by
+# hand the same way as root-app-dev.yaml, alongside root-app-shared.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/prod/apps
+    directory:
+      # Only pick up Application manifests directly in apps/ - the
+      # values/ and manifests/ directories those Applications point at are
+      # each app's own source, not additional Applications to register here.
+      recurse: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
