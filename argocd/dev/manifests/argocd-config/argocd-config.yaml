@@ -1,7 +1,8 @@
-# Patches the argocd-cm and argocd-rbac-cm ConfigMaps that ArgoCD's own
-# install created (ArgoCD itself was installed by hand, per ../../README.md's
-# "Applications not yet onboarded" - this only manages these two
-# ConfigMaps, not the rest of the install). The argocd-oidc-secret referenced
+# Patches the argocd-cm, argocd-rbac-cm, and argocd-cmd-params-cm
+# ConfigMaps that ArgoCD's own install created. The rest of the ArgoCD
+# install is tracked separately by the argocd Application - see
+# ../argocd/install.yaml, which deliberately excludes these three
+# ConfigMaps in favor of this file. The argocd-oidc-secret referenced
 # below is managed separately by the secrets Application - see
 # ../secrets/argocd-oidc.yaml.
 #
@@ -137,3 +138,17 @@ data:
   policy.csv: |
     g, "ArgoCD Admins", role:admin
     g, "ArgoCD Viewers", role:readonly
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cmd-params-cm
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-cmd-params-cm
+    app.kubernetes.io/part-of: argocd
+data:
+  # argocd-server runs plain HTTP internally - Traefik terminates TLS at the
+  # Ingress (see ../ingress-apps/). Without this, argocd-server redirects
+  # HTTP->HTTPS itself and double-TLS breaks.
+  server.insecure: "true"

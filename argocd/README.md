@@ -34,6 +34,7 @@ argocd/
 │   │   ├── metallb.yaml
 │   │   ├── sops-secrets-operator.yaml
 │   │   ├── traefik.yaml
+│   │   ├── argocd.yaml
 │   │   ├── argocd-config.yaml
 │   │   ├── cluster-issuers.yaml
 │   │   ├── coredns.yaml
@@ -52,6 +53,7 @@ argocd/
 │   │   ├── sops-secrets-operator-values.yaml
 │   │   └── traefik-values.yaml
 │   └── manifests/
+│       ├── argocd/              # vendored copy of ArgoCD's own install manifest
 │       ├── argocd-config/
 │       ├── cluster-issuers/
 │       ├── coredns/
@@ -87,7 +89,7 @@ groups:
   git repository for the matching values file in that cluster's `values/`.
   ArgoCD calls this a
   [multi-source Application](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/).
-- **Raw-manifest Applications** (`argocd-config`, `cluster-issuers`,
+- **Raw-manifest Applications** (`argocd`, `argocd-config`, `cluster-issuers`,
   `coredns`, `ingress-apps`, `metallb-pool`, `secrets` in `dev/`) each use
   one source: a directory of plain Kubernetes manifests under that
   cluster's `manifests/`.
@@ -106,7 +108,8 @@ groups:
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
 | `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
 | `traefik` | Helm chart `traefik` from the official traefik chart repository, values in `dev/values/traefik-values.yaml` | `traefik` | Ingress controller. Brought under GitOps at the chart version already running (`traefik-41.0.2`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `ingress-apps` routes through this. Syncs with `ServerSideApply=true`. |
-| `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm` and `argocd-rbac-cm` ConfigMaps that ArgoCD's own (by-hand) install created. Wires up OIDC login against authentik and maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles. |
+| `argocd` | Raw manifests (vendored upstream install manifest) in `dev/manifests/argocd/` | `argocd` | The rest of ArgoCD's own install, beyond what `argocd-config` manages - CRDs, controllers, RBAC. ArgoCD managing itself - see [Applications brought under GitOps](#applications-brought-under-gitops). |
+| `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm`, `argocd-rbac-cm`, and `argocd-cmd-params-cm` ConfigMaps that ArgoCD's own install created. Wires up OIDC login against authentik, maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles, and keeps `argocd-server` running in `--insecure` mode since Traefik terminates TLS. |
 | `cluster-issuers` | Raw manifests in `dev/manifests/cluster-issuers/` | `cert-manager` | cert-manager `ClusterIssuer` resources. The manifests define a Let's Encrypt staging issuer and a Let's Encrypt production issuer, both through a Cloudflare DNS-01 challenge for the `pcenicni.dev` zone. |
 | `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve the four `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
 | `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
@@ -356,18 +359,27 @@ at is ever replaced or re-IP'd, update `pihole-server` to match.
 
 ## Applications brought under GitOps
 
-cert-manager, MetalLB, Traefik, and Headlamp were all originally installed
-by hand, before this repo tracked them as Applications. Each is now
-onboarded (`cert-manager`, `metallb`, `traefik`, `headlamp` in the table
-above), pinned to the exact chart version already running, so onboarding
-was a no-op sync against the live cluster rather than a redeploy. Each is
-a plain Helm-chart Application, the same pattern as `alloy` or
-`kube-prometheus-stack` - see [Helm-chart Applications](#applications-dev)
-above. Their values files reproduce exactly what
-`helm get values <release> -n <namespace>` showed for the by-hand install,
-so the first sync changes nothing.
+ArgoCD, cert-manager, MetalLB, Traefik, and Headlamp were all originally
+installed by hand, before this repo tracked them as Applications. Each is
+now onboarded (`argocd`, `cert-manager`, `metallb`, `traefik`, `headlamp` in
+the table above), pinned to the exact chart/manifest version already
+running, so onboarding was a no-op sync against the live cluster rather
+than a redeploy.
 
-ArgoCD's own install (the rest of it, beyond what `argocd-config` already
-manages) is still installed by hand as of this writing - bringing ArgoCD
-under GitOps means ArgoCD managing itself, which needs more care than the
-four Applications above. That's tracked separately.
+cert-manager, MetalLB, and Traefik are plain Helm-chart Applications, the
+same pattern as `alloy` or `kube-prometheus-stack` - see [Helm-chart
+Applications](#applications-dev) above. Their values files reproduce
+exactly what `helm get values <release> -n <namespace>` showed for the
+by-hand install, so the first sync changes nothing.
+
+ArgoCD itself is the interesting case, since it means ArgoCD manages its
+own install. `dev/manifests/argocd/install.yaml` is a vendored copy of the
+official install manifest for the exact version already running, with five
+resources deliberately removed - `argocd-cm`, `argocd-rbac-cm`, and
+`argocd-cmd-params-cm` (already fully owned by `argocd-config`, which
+patches in real OIDC/RBAC/insecure-mode config), and `argocd-secret` /
+`argocd-notifications-secret` (hold live runtime state - the admin
+password hash, JWT signing key, and notification credentials - that
+ArgoCD generates itself; re-applying upstream's empty placeholder version
+of either would wipe that out and break login). See the comment at the
+top of that file for how to carry this forward on a future ArgoCD upgrade.

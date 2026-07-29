@@ -1,0 +1,29 @@
+# ArgoCD's own install - the rest of it, beyond what argocd-config already
+# manages (argocd-cm/argocd-rbac-cm/argocd-cmd-params-cm). Previously
+# installed by hand entirely (see ../../README.md's former "Applications
+# not yet onboarded" note); brought under GitOps as a vendored copy of the
+# exact upstream version already running - see ../manifests/argocd/. This
+# is ArgoCD managing itself: the root-dev Application (../../bootstrap/
+# root-app-dev.yaml) creates this Application the same as any other, and
+# from then on this Application's own future changes reconcile from git
+# too, same as everything else in dev/apps/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/argocd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
