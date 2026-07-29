@@ -12,9 +12,7 @@ spec:
   sources:
     - repoURL: https://grafana.github.io/helm-charts
       chart: loki
-      # TODO: pin to the version already installed by hand (`helm list -n
-      # monitoring`) - see kube-prometheus-stack.yaml's note on why.
-      targetRevision: REPLACE_ME
+      targetRevision: 7.1.0
       helm:
         valueFiles:
           - $values/argocd/dev/values/loki-values.yaml
