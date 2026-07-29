@@ -31,7 +31,10 @@ prometheus:
               storage: 4Gi
 
 grafana:
-  adminPassword: dev-admin-changeme
+  admin:
+    existingSecret: grafana-admin-credentials
+    userKey: admin-user
+    passwordKey: admin-password
   # client_secret is read from the grafana-oidc-secret Secret (decrypted by
   # sops-secrets-operator from ../manifests/secrets/grafana-oidc.yaml) via
   # $__env{} ini substitution - the chart's client-side lint

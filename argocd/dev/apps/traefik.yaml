@@ -1,0 +1,32 @@
+# Traefik - ingress controller. Previously installed by hand (see
+# ../../README.md's former "Applications not yet onboarded" note); brought
+# under GitOps at the same chart version already live (traefik-41.0.2), so
+# this sync is a no-op against the running cluster. The ingress-apps
+# Application's Ingress resources route through this.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://traefik.github.io/charts
+      chart: traefik
+      targetRevision: 41.0.2
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/traefik-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

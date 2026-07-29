@@ -1,0 +1,8 @@
+# traefik - values for the traefik Helm chart. See ../apps/traefik.yaml.
+# Matches the values already live from the original by-hand `helm install`,
+# per `helm get values traefik -n traefik`.
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+service:
+  type: LoadBalancer

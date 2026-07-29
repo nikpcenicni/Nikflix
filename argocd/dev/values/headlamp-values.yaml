@@ -1,0 +1,5 @@
+# headlamp - values for the headlamp Helm chart. See ../apps/headlamp.yaml.
+# No overrides - the by-hand `helm install` used chart defaults (`helm get
+# values headlamp -n headlamp` returns null). Kept as an explicit, empty
+# values file to match this repo's convention of every Helm-chart
+# Application having a values file.

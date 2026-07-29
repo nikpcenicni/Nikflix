@@ -1,0 +1,31 @@
+# Headlamp - web-based Kubernetes dashboard. Previously installed by hand
+# (see ../../README.md's former "Applications not yet onboarded" note);
+# brought under GitOps at the same chart version already live
+# (headlamp-0.43.0), so this sync is a no-op against the running cluster.
+# Not yet SSO-wired - see ../../README.md's "SSO / authentik" section.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: headlamp
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/headlamp/
+      chart: headlamp
+      targetRevision: 0.43.0
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/headlamp-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: headlamp
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
