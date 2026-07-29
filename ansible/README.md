@@ -10,6 +10,12 @@ Ansible playbooks to patch and harden the `noble` cluster:
 
 No extra collections required - everything uses `ansible.builtin`.
 
+See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for network topology,
+cluster membership, and the automation pipeline - with diagrams - including
+the planned 6-node layout (3 more noble-gas-named nodes) and the
+non-obvious findings from actually building this (native vs tagged VLANs,
+the `pvecm` silent-failure gotcha, etc).
+
 ## Quick start
 
 For brand new nodes with nothing set up yet, `bootstrap.yml` runs

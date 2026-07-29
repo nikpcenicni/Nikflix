@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (gitignored) and fill in.
+
+proxmox_endpoint  = "https://192.168.10.10:8006/"
+proxmox_api_token = "terraform@pve!terraform=00000000-0000-0000-0000-000000000000"
+
+# Leave these at their defaults unless your setup differs from
+# docs/architecture/talos.md / docs/architecture/proxmox.md:
+# talos_version           = "v1.13.7"
+# talos_schematic_id      = "376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba"
+# iso_storage             = "local"
+# vm_storage              = "local-lvm"
+# proxmox_bridge_mgmt     = "vmbr0"
+# proxmox_bridge_storage  = "vmbr2"
+# enable_storage_nic      = true
+# enable_worker_vms       = false
