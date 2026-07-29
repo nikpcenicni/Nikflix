@@ -1,0 +1,54 @@
+# Jellyseerr - values for the bjw-s/app-template Helm chart. See
+# ../apps/jellyseerr.yaml. Request portal - talks to Sonarr/Radarr over
+# their APIs only, no NFS mount needed. See
+# docs/architecture/media-stack.md#components.
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: fallenbagel/jellyseerr
+          tag: latest
+        env:
+          # Adjust to your local timezone.
+          TZ: "Etc/UTC"
+        resources:
+          requests:
+            cpu: 25m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 5055
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: jellyseerr.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["jellyseerr.lab.pcenicni.dev"]
+        secretName: jellyseerr-tls
+
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    globalMounts:
+      - path: /app/config

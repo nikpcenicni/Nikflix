@@ -1,0 +1,31 @@
+# Bazarr - subtitle automation, watches the Sonarr/Radarr libraries. Values
+# in ../values/bazarr-values.yaml. See
+# docs/architecture/media-stack.md#components. First-time setup (connecting
+# Sonarr/Radarr, subtitle providers) is manual, through Bazarr's own web UI -
+# see ../../README.md's "Media stack" section.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bazarr
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/bazarr-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: media
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

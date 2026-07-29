@@ -1,0 +1,31 @@
+# Jellyseerr - user-facing request portal, forwards approved requests to
+# Sonarr/Radarr. Values in ../values/jellyseerr-values.yaml. See
+# docs/architecture/media-stack.md#components. First-time setup (connecting
+# Sonarr/Radarr, Jellyfin on the Mac Mini) is manual, through Jellyseerr's
+# own web UI - see ../../README.md's "Media stack" section.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: jellyseerr
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/jellyseerr-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: media
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

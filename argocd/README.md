@@ -26,12 +26,19 @@ argocd/
 │   ├── apps/
 │   │   ├── alloy.yaml
 │   │   ├── authentik.yaml
+│   │   ├── bazarr.yaml
 │   │   ├── cert-manager.yaml
 │   │   ├── external-dns.yaml
 │   │   ├── headlamp.yaml
+│   │   ├── jellyseerr.yaml
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
 │   │   ├── metallb.yaml
+│   │   ├── prowlarr.yaml
+│   │   ├── qbittorrent.yaml
+│   │   ├── radarr.yaml
+│   │   ├── sabnzbd.yaml
+│   │   ├── sonarr.yaml
 │   │   ├── sops-secrets-operator.yaml
 │   │   ├── traefik.yaml
 │   │   ├── argocd.yaml
@@ -44,12 +51,19 @@ argocd/
 │   ├── values/
 │   │   ├── alloy-values.yaml
 │   │   ├── authentik-values.yaml
+│   │   ├── bazarr-values.yaml
 │   │   ├── cert-manager-values.yaml
 │   │   ├── external-dns-values.yaml
 │   │   ├── headlamp-values.yaml
+│   │   ├── jellyseerr-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   ├── loki-values.yaml
 │   │   ├── metallb-values.yaml
+│   │   ├── prowlarr-values.yaml
+│   │   ├── qbittorrent-values.yaml
+│   │   ├── radarr-values.yaml
+│   │   ├── sabnzbd-values.yaml
+│   │   ├── sonarr-values.yaml
 │   │   ├── sops-secrets-operator-values.yaml
 │   │   └── traefik-values.yaml
 │   └── manifests/
@@ -100,12 +114,19 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). Depends on `sops-secrets-operator` and `secrets` having synced first. |
+| `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `external-dns` | Helm chart `external-dns` from the official external-dns chart repository, values in `dev/values/external-dns-values.yaml` | `external-dns` | Watches Ingress resources cluster-wide and auto-creates/updates matching `*.lab.pcenicni.dev` records in pi-hole's custom DNS list - see [DNS / external-dns](#dns--external-dns). Depends on `sops-secrets-operator` and `secrets` having synced first. |
 | `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). Not yet SSO-wired - see [SSO / authentik](#sso--authentik). |
+| `jellyseerr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/jellyseerr-values.yaml` | `media` | User-facing request portal - approved requests get forwarded to Sonarr/Radarr. See [Media stack](#media-stack). |
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
+| `prowlarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prowlarr-values.yaml` | `media` | Indexer manager - one place to configure trackers/indexers, pushed out to Sonarr, Radarr, and the downloaders. See [Media stack](#media-stack). |
+| `qbittorrent` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/qbittorrent-values.yaml` | `media` | Torrent download client, routed through a PIA VPN via a gluetun sidecar container in the same pod. See [Media stack](#media-stack). Depends on the `qbittorrent-vpn-credentials` SopsSecret and `sops-secrets-operator` having synced first. |
+| `radarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/radarr-values.yaml` | `media` | Movie automation - same as Sonarr, for movies. See [Media stack](#media-stack). |
+| `sabnzbd` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/sabnzbd-values.yaml` | `media` | Usenet download client - no VPN needed (provider-based, not peer-to-peer). See [Media stack](#media-stack). |
+| `sonarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/sonarr-values.yaml` | `media` | TV automation - tracks wanted episodes, searches indexers, sends grabs to a downloader, imports finished files. See [Media stack](#media-stack). |
 | `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
 | `traefik` | Helm chart `traefik` from the official traefik chart repository, values in `dev/values/traefik-values.yaml` | `traefik` | Ingress controller. Brought under GitOps at the chart version already running (`traefik-41.0.2`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `ingress-apps` routes through this. Syncs with `ServerSideApply=true`. |
 | `argocd` | Raw manifests (vendored upstream install manifest) in `dev/manifests/argocd/` | `argocd` | The rest of ArgoCD's own install, beyond what `argocd-config` manages - CRDs, controllers, RBAC. ArgoCD managing itself - see [Applications brought under GitOps](#applications-brought-under-gitops). |
@@ -192,6 +213,79 @@ by hand in pi-hole if that ever matters; the alternative (`policy: sync`)
 risks deleting hand-managed records pi-hole has no way to tell apart from
 ones external-dns created, since pi-hole's DNS API has no per-record
 ownership tracking to begin with (`registry: noop`).
+
+## Media stack
+
+`jellyseerr`, `sonarr`, `radarr`, `prowlarr`, `qbittorrent`, `sabnzbd`, and
+`bazarr` (all in the `media` namespace) are the Talos-side half of
+[docs/architecture/media-stack.md](../docs/architecture/media-stack.md).
+Jellyfin itself runs on a Mac Mini outside the cluster and outside this
+GitOps tree entirely - see that doc for why. All seven Applications use the
+generic [bjw-s/app-template](https://github.com/bjw-s-labs/helm-charts)
+chart, since none of these images ship an official Helm chart.
+
+### Storage: NAS-backed, not Longhorn
+
+Each app's own config (SQLite databases, settings) uses a small `local-path`
+PVC, the same stand-in every other dev-cluster app uses - see
+[Applications brought under GitOps](#applications-brought-under-gitops).
+Longhorn is deliberately not part of this: see
+[talos.md's storage section](../docs/architecture/talos.md#storage-longhorn-on-dedicated-per-node-ssds)
+and its Open Questions for why Longhorn stays deferred until real per-node
+SSDs are working.
+
+The shared media library and `downloads/` staging area are NFS mounts
+straight to the NAS - `sonarr-values.yaml`, `radarr-values.yaml`,
+`bazarr-values.yaml`, `qbittorrent-values.yaml`, and `sabnzbd-values.yaml`
+each declare these as `persistence.<name>.type: nfs` entries (chart-native,
+no PVC/StorageClass involved). **These currently point at placeholder
+values** (`CHANGEME-nas-ip` and `CHANGEME-*-export`) - replace them with the
+NAS's real VLAN 80 IP/hostname and export paths before relying on this.
+Until then, the affected pods sync fine but hang in `ContainerCreating`
+trying to mount a nonexistent export.
+
+Sonarr and Radarr each mount the library export twice under different
+paths (`/tv` and `/movies` respectively) so their own root-folder settings
+match Bazarr's identical `/tv`/`/movies` mounts - see
+[media-stack.md's storage section](../docs/architecture/media-stack.md#storage-shared-nas-library)
+for why the design moves completed downloads into the library instead of
+hardlinking them (the two shares don't have to be the same filesystem this
+way).
+
+### qBittorrent's VPN sidecar
+
+`qbittorrent-values.yaml` runs two containers in one pod: `gluetun` (brings
+up a PIA VPN tunnel) and `qbittorrent`. Containers in the same Kubernetes
+pod already share a network namespace, so qBittorrent's traffic rides
+through gluetun's tunnel automatically - no special sidecar wiring needed
+beyond that. `gluetun` needs the `qbittorrent-vpn-credentials` SopsSecret
+(`dev/manifests/secrets/qbittorrent-vpn.yaml`), which currently holds
+placeholder PIA credentials. Fill in the real ones:
+
+```sh
+sops argocd/dev/manifests/secrets/qbittorrent-vpn.yaml
+```
+
+Sonarr, Radarr, and Bazarr don't need a VPN - only qBittorrent's torrent
+swarm traffic exposes an IP address to peers; SABnzbd's Usenet traffic
+doesn't. See
+[media-stack.md's Components table](../docs/architecture/media-stack.md#components).
+
+### First-time setup is manual, per app
+
+None of these apps have a declarative bootstrap mechanism the way
+authentik's blueprint ConfigMap does. After each app first syncs, connect
+them to each other by hand, once, through their own web UIs:
+
+1. **Prowlarr** - add Sonarr, Radarr, qBittorrent, and SABnzbd as
+   applications/download clients (their in-cluster Service DNS names, e.g.
+   `http://sonarr.media.svc.cluster.local:8989`), then add indexers.
+2. **Sonarr / Radarr** - add Prowlarr, add qBittorrent and SABnzbd as
+   download clients, and add the `/tv` or `/movies` root folder.
+3. **Bazarr** - connect to Sonarr and Radarr, and configure subtitle
+   providers.
+4. **Jellyseerr** - connect to Sonarr and Radarr, and to Jellyfin on the
+   Mac Mini (point it at the SMB library share).
 
 ## Configuring the authentik admin account
 

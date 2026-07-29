@@ -1,0 +1,109 @@
+# qBittorrent - values for the bjw-s/app-template Helm chart. See
+# ../apps/qbittorrent.yaml. Two containers share this pod's network
+# namespace (automatic in Kubernetes - no special sidecar config needed):
+# gluetun brings up the PIA VPN tunnel, and qBittorrent's traffic rides
+# through it since they're in the same netns. See
+# docs/architecture/media-stack.md#components.
+#
+# PLACEHOLDER: the nfs server/path values below are not yet real - fill in
+# the NAS's actual VLAN 80 IP/hostname and export path, then remove this
+# comment. Until then the sync itself will succeed, but the pod will hang
+# in ContainerCreating trying to mount a nonexistent NFS export.
+#
+# The qbittorrent-vpn SopsSecret (../manifests/secrets/qbittorrent-vpn.yaml)
+# needs real PIA credentials filled in via `sops` before this pod can
+# actually reach the internet - see ../../README.md's "Media stack" section.
+controllers:
+  main:
+    containers:
+      # gluetun must come first / be healthy before qBittorrent's traffic has
+      # anywhere to go, but Kubernetes doesn't guarantee container start
+      # order within a pod (no native sidecar ordering here) - qBittorrent
+      # will simply have no network until gluetun's tunnel is up, then
+      # recover on its own once it is.
+      gluetun:
+        image:
+          repository: qmcgaw/gluetun
+          tag: latest
+        envFrom:
+          - secretRef:
+              name: qbittorrent-vpn-credentials
+        env:
+          VPN_SERVICE_PROVIDER: "private internet access"
+          VPN_TYPE: "openvpn"
+          # Adjust to the PIA region you want to exit from.
+          SERVER_REGIONS: "US East"
+          # Allows inbound access to qBittorrent's WebUI and torrent port
+          # through gluetun's firewall - without this, sibling containers in
+          # the pod can't reach qBittorrent's listening ports at all.
+          FIREWALL_VPN_INPUT_PORTS: "8080"
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+      qbittorrent:
+        image:
+          repository: lscr.io/linuxserver/qbittorrent
+          tag: latest
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          # Adjust to your local timezone.
+          TZ: "Etc/UTC"
+          WEBUI_PORT: "8080"
+        resources:
+          requests:
+            cpu: 25m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 8080
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: qbittorrent.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["qbittorrent.lab.pcenicni.dev"]
+        secretName: qbittorrent-tls
+
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    advancedMounts:
+      main:
+        qbittorrent:
+          - path: /config
+  downloads:
+    enabled: true
+    type: nfs
+    server: CHANGEME-nas-ip # e.g. 192.168.80.50
+    path: /CHANGEME-downloads-export
+    advancedMounts:
+      main:
+        qbittorrent:
+          - path: /downloads
