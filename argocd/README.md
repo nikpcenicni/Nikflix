@@ -84,11 +84,12 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). Depends on `sops-secrets-operator` and `secrets` having synced first. |
-| `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. |
+| `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
 | `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm` and `argocd-rbac-cm` ConfigMaps that ArgoCD's own (by-hand) install created. Wires up OIDC login against authentik and maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles. |
 | `cluster-issuers` | Raw manifests in `dev/manifests/cluster-issuers/` | `cert-manager` | cert-manager `ClusterIssuer` resources. The manifests define a Let's Encrypt staging issuer and a Let's Encrypt production issuer, both through a Cloudflare DNS-01 challenge for the `pcenicni.dev` zone. |
+| `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve the four `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
 | `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
 | `metallb-pool` | Raw manifests in `dev/manifests/metallb-pool/` | `metallb-system` | MetalLB `IPAddressPool` and `L2Advertisement` resources. These resources give MetalLB the address range `192.168.10.240`–`192.168.10.245` to assign to `LoadBalancer` services. |
 | `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, and ArgoCD's OIDC/database credentials - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
@@ -113,7 +114,20 @@ Grafana and ArgoCD are fully wired: both read the `groups` claim authentik's
 default `profile` scope mapping returns, from their own app-level OIDC
 config (`grafana.ini`'s `auth.generic_oauth` and `argocd-cm`'s
 `oidc.config`/`argocd-rbac-cm`'s `policy.csv` respectively) - no cluster-level
-changes needed.
+changes needed beyond `coredns` (below).
+
+Both the OAuth2 authorization code exchange (Grafana → authentik) and the
+OIDC callback validation (ArgoCD → authentik) happen server-to-server,
+*from inside the cluster*, not from the user's browser. Pods therefore need
+`auth.lab.pcenicni.dev` (and the other three `*.lab.pcenicni.dev` hosts) to
+resolve to Traefik's in-cluster LoadBalancer IP the same way a LAN client's
+browser does via split-horizon DNS on the LAN's own resolver - the `coredns`
+Application (see the table above) makes the cluster self-sufficient for this
+instead of depending on whatever DNS server the Talos node itself happens to
+use. Without it, these hostnames fall through to public DNS from inside the
+cluster and pods land on an unrelated host, which surfaces as a confusing
+TLS certificate mismatch (Grafana) or a token/callback failure (ArgoCD), not
+an obvious DNS error.
 
 Headlamp is **not** fully wired. The authentik-side provider, application,
 and `Headlamp Admins` group exist, but logging in via SSO also requires

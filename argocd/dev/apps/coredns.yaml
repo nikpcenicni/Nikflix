@@ -1,0 +1,23 @@
+# Patches the coredns ConfigMap that Talos's own bootstrap installed -
+# ../manifests/coredns/. CoreDNS is not itself tracked as an Application
+# (Talos owns its Deployment/ServiceAccount/etc.); this only manages the
+# Corefile ConfigMap, same relationship argocd-config has to the ArgoCD
+# install - see ../../README.md's "Applications not yet onboarded".
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: coredns
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/coredns
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
