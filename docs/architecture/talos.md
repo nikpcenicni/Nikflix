@@ -14,6 +14,15 @@ applies as a single declarative machine config. This approach fits well
 on top of Proxmox VMs, which are themselves fully Ansible-managed. Both
 layers are declarative. Neither layer needs hand administration.
 
+An interim development cluster already exists as a scaled-down stand-in
+for this design. This cluster runs today, on the same three Proxmox nodes
+(helium, neon, and argon) described below. See
+[development/README.md](../../development/README.md) and
+[development/talos/README.md](../../development/talos/README.md) for its
+setup. The target-state design in this document is not built. The
+dedicated per-node SSDs, the `vmbr2` storage bridge, and the six physical
+nodes described below remain unbuilt.
+
 ## Cluster topology
 
 | VM | Role | Proxmox host | vCPU | RAM | Boot disk | Longhorn SSD | Mgmt IP (VLAN 10) | Storage IP (VLAN 80) |
@@ -225,8 +234,11 @@ described above.
 |-----|---------|------------------|-----------------|
 | ArgoCD | GitOps continuous delivery — reconciles cluster state from a git repo, and manages every other app in this table (including itself, via the app-of-apps pattern) | Yes (UI) | No — state lives in etcd + git |
 | Headlamp | Web-based Kubernetes dashboard for ad-hoc inspection/debugging, RBAC-scoped | Yes (UI) | No |
-| ingress-nginx | Ingress controller — terminates TLS (via cert-manager certs) and routes HTTP(S) to in-cluster UIs | n/a — it *is* the entry point | No |
-| cert-manager | Issues and renews TLS certificates used by ingress-nginx | No (no UI) | No |
+| Traefik | Ingress controller — terminates TLS (via cert-manager certs) and routes HTTP(S) to in-cluster UIs | n/a — it *is* the entry point | No |
+| cert-manager | Issues and renews TLS certificates used by Traefik | No (no UI) | No |
+| Authentik | Single sign-on (SSO) and identity provider for the platform UIs | Yes (UI) | Yes — PostgreSQL data |
+| MetalLB | Assigns LoadBalancer IP addresses to in-cluster services, such as Traefik | No (no UI) | No |
+| external-dns | Creates and updates Domain Name System (DNS) records for Ingress hosts automatically | No (no UI) | No |
 | Prometheus | Scrapes and stores cluster + workload metrics | Optional (usually queried via Grafana instead) | Yes |
 | Loki | Aggregates logs shipped from a per-node collector | No (queried via Grafana) | Yes |
 | Grafana | Dashboards querying Prometheus (metrics) and Loki (logs) | Yes (UI) | Yes — dashboard/config state |
@@ -243,14 +255,17 @@ graph TB
     end
 
     subgraph ingress_layer["Ingress"]
-        Ingress["ingress-nginx"]
+        Ingress["Traefik"]
     end
 
     subgraph platform["Platform services"]
         Headlamp["Headlamp"]
         CertManager["cert-manager"]
+        Authentik["Authentik"]
+        MetalLB["MetalLB"]
+        ExternalDNS["external-dns"]
         Prometheus["Prometheus"]
-        Shipper["log shipper<br/>(daemonset, all nodes)"]
+        Shipper["Grafana Alloy<br/>(daemonset, all nodes)"]
         Loki["Loki"]
         Grafana["Grafana"]
     end
@@ -262,17 +277,23 @@ graph TB
     ArgoCD -.->|"deploys/manages<br/>(app-of-apps)"| ArgoCD
     ArgoCD -->|deploys/manages| Headlamp
     ArgoCD -->|deploys/manages| CertManager
+    ArgoCD -->|deploys/manages| Authentik
+    ArgoCD -->|deploys/manages| MetalLB
+    ArgoCD -->|deploys/manages| ExternalDNS
     ArgoCD -->|deploys/manages| Prometheus
     ArgoCD -->|deploys/manages| Loki
     ArgoCD -->|deploys/manages| Grafana
     ArgoCD -->|deploys/manages| Ingress
 
     CertManager -->|issues TLS certs| Ingress
+    MetalLB -->|assigns LoadBalancer IP| Ingress
+    ExternalDNS -->|creates DNS records for| Ingress
 
     User -->|HTTPS| Ingress
     Ingress --> ArgoCD
     Ingress --> Headlamp
     Ingress --> Grafana
+    Ingress --> Authentik
 
     Prometheus -->|scrapes| Metrics
     Shipper -->|ships logs| Loki
@@ -318,10 +339,11 @@ through git, not through a manual `kubectl apply` command.
 5. **Point Longhorn's backup target at the NAS** once Garage or SeaweedFS
    is running there.
 6. **Bootstrap ArgoCD by hand** against the running cluster. Then hand it
-   the git repository containing manifests for cert-manager,
-   ingress-nginx, Prometheus, Loki, Grafana, and Headlamp, plus ArgoCD's
-   own app-of-apps config. ArgoCD then takes over managing all of them —
-   see [Core platform applications](#core-platform-applications).
+   the git repository containing manifests for cert-manager, Traefik,
+   Authentik, MetalLB, external-dns, Prometheus, Loki, Grafana, and
+   Headlamp, plus ArgoCD's own app-of-apps config. ArgoCD then takes over
+   managing all of them — see
+   [Core platform applications](#core-platform-applications).
 
 ## Open questions
 
@@ -331,7 +353,10 @@ phase, not before you write this document:
 
 - **Disk passthrough versus a Proxmox-managed pool** for the per-node
   Longhorn SSDs. This choice affects live migration; see
-  [Storage](#storage-longhorn-on-dedicated-per-node-ssds).
+  [Storage](#storage-longhorn-on-dedicated-per-node-ssds). The design
+  cannot validate this choice yet. Only one of the three current nodes
+  (helium) has a working SSD today. Argon's SSD returns write errors.
+  Neon's SSD is not detected yet.
 - **Longhorn scheduling on tainted control-plane nodes.** Once workers
   join and control-plane VMs are re-tainted against general workloads,
   Longhorn's manager and engine components still need to run there to
@@ -339,27 +364,28 @@ phase, not before you write this document:
   toleration carve-out for Longhorn's daemonset specifically, not a
   blanket untaint.
 - **Garage versus SeaweedFS** for the NAS-side S3 backup target.
-- **Container Network Interface (CNI).** Talos defaults to Flannel. The
-  design has not decided yet whether to keep the default or move to
-  Cilium.
-- **Talos and Kubernetes version pinning.** Not yet chosen.
+- **Talos and Kubernetes version pinning.** Not yet chosen for this
+  target-state design. As a side reference, the development cluster
+  currently pins Talos v1.13.7 (see
+  [development/talos/README.md](../../development/talos/README.md)), but
+  this is not a formal production decision.
 - **Provisioning tooling.** Whether Talos VM creation and config gets its
   own Ansible role, matching the
   [proxmox.md automation pipeline](proxmox.md#ansible-automation-pipeline),
-  or `talosctl` and Terraform drive it directly.
+  or `talosctl` and Terraform drive it directly. The repo still has no
+  Ansible role for Talos. On the development cluster, an operator applies
+  the machine config by hand with `talosctl` (see
+  [development/talos/README.md](../../development/talos/README.md)).
 - **VLAN 10 versus a dedicated VLAN** for cluster traffic. Currently VLAN
   10 is the choice (see [Networking](#networking)). Revisit this choice
   if traffic volume or isolation needs change.
-- **ingress-nginx versus Traefik** for the ingress controller. The design
-  has not chosen between the two yet (see
-  [Core platform applications](#core-platform-applications)).
-- **cert-manager issuer strategy.** An internal, self-signed Certificate
-  Authority (CA) is the natural fit for these certificates. The User
-  Interfaces (UIs) for ArgoCD, Headlamp, and Grafana sit on the internal
-  VLAN 10 network, not on the internet. Because of this, plain HTTP-01
-  Automatic Certificate Management Environment (ACME) challenges against
-  a public CA like Let's Encrypt do not work. A Domain Name System
-  (DNS)-01 challenge, with a supporting DNS provider, is the only
-  alternative. Not yet decided.
-- **Log shipper.** Loki needs a per-node collector, such as Promtail or
-  Grafana Alloy, to feed it. Not yet chosen.
+- **cert-manager issuer strategy: resolved.** The design uses Let's
+  Encrypt as the certificate authority (CA). Let's Encrypt issues each
+  certificate through a Domain Name System (DNS)-01 Automatic Certificate
+  Management Environment (ACME) challenge, against the Cloudflare-hosted
+  `pcenicni.dev` zone. A plain HTTP-01 challenge does not work for UIs
+  that stay off the public internet. This document already flagged a
+  DNS-01 challenge, with a supporting DNS provider, as the fallback for
+  that case. The development cluster already runs two ClusterIssuer
+  resources, `letsencrypt-staging` and `letsencrypt-prod`, built on this
+  approach.
