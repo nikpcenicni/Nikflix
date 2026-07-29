@@ -126,6 +126,59 @@ onboarded" below). Until both of those happen, Headlamp keeps working the
 same way it does today (in-cluster service account), unaffected by
 authentik's presence.
 
+## Configuring the authentik admin account
+
+### First login
+
+Go to `https://auth.lab.pcenicni.dev/` and sign in as `akadmin` - the
+`AUTHENTIK_BOOTSTRAP_PASSWORD` env var (see
+`dev/values/authentik-values.yaml`) already created this account on first
+boot, so there's no setup wizard to click through. Get the password by
+decrypting `dev/manifests/secrets/authentik-config.yaml`:
+
+```sh
+sops -d dev/manifests/secrets/authentik-config.yaml | grep AUTHENTIK_BOOTSTRAP_PASSWORD
+```
+
+(see [Secrets management](#secrets-management) below for `SOPS_AGE_KEY_FILE`
+setup). This value only creates `akadmin` the *first* time authentik starts
+against an empty database - changing it in git afterward does nothing to the
+already-created account. Rotate the account's actual password from inside
+authentik instead (next section), not by editing this file.
+
+### Secure the account after first login
+
+Do these two things immediately after the first login, before creating or
+inviting any other users:
+
+1. **Change the `akadmin` password.** User menu (top right) → **Settings** →
+   set a new password. This replaces the bootstrap password from git with
+   one that exists only in authentik's database.
+2. **Enable MFA (TOTP) on `akadmin`.** Same **Settings** page → **Add TOTP
+   Authenticator**. `akadmin` is a superuser with unrestricted access to
+   every app this cluster's SSO covers (see [SSO /
+   authentik](#sso--authentik)) and to authentik's own admin interface, so
+   treat it like a root account, not a day-to-day login.
+
+### Day-to-day admin access
+
+Prefer creating a personal admin user over sharing `akadmin` for regular
+use. In authentik's admin interface: **Directory → Users → Create**, then
+**Directory → Groups → authentik Admins → members** to add that user - this
+is the same built-in superuser group `akadmin` belongs to, created
+automatically by authentik itself (not by this repo's blueprint).
+
+### Granting app access to other users
+
+The `Grafana Admins`/`Editors`/`Viewers`, `ArgoCD Admins`/`Viewers`, and
+`Headlamp Admins` groups the `authentik-blueprints` ConfigMap creates (see
+[SSO / authentik](#sso--authentik)) start with no members except `akadmin`.
+To give someone access to Grafana or ArgoCD: **Directory → Users → Create**
+for them, then **Directory → Groups → <group name> → members** to add them
+to the group matching the access level they need. Membership takes effect
+on their next login - no sync or cluster change required, since this is
+authentik-internal state, not something GitOps tracks.
+
 ## Secrets management
 
 Every secret this repo needs (authentik's `secret_key`, its Postgres
