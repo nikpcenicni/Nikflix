@@ -39,10 +39,14 @@ provider:
 # pihole-server if/when a synced pi-hole HA setup replaces it as the DNS
 # source of truth. --pihole-tls-skip-verify is needed because pi-hole's
 # admin UI serves a self-signed cert for its LAN IP.
+# external-dns' flag parser (kingpin) treats boolean flags as bare
+# switches, not --flag=true/false - a map-form extraArgs entry always
+# renders "=true", which kingpin rejects ("unexpected true"). List form
+# gives control over exactly what gets emitted.
 extraArgs:
-  pihole-server: https://192.168.1.127
-  pihole-api-version: "6"
-  pihole-tls-skip-verify: "true"
+  - --pihole-server=https://192.168.1.127
+  - --pihole-api-version=6
+  - --pihole-tls-skip-verify
 
 # CHANGEME: pihole-credentials is a SOPS-encrypted Secret - see
 # ../manifests/secrets/pihole.yaml and ../../README.md's "Secrets
