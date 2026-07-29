@@ -66,13 +66,17 @@ CAUTION: If `vmbr2` does not exist on a node and `enable_storage_nic` is
 
 ## Variables
 
-Set `proxmox_endpoint` and `proxmox_api_token` in `terraform.tfvars`. All
-other variables have defaults in `variables.tf`.
+Set `proxmox_endpoint` in `terraform.tfvars`. Set `proxmox_api_token` as an
+environment variable instead — `export TF_VAR_proxmox_api_token="user@realm!token-id=uuid"`
+— rather than in the file. Terraform maps any `TF_VAR_<name>` environment
+variable to the matching declared variable automatically, so the token
+never needs to sit in plaintext on disk. All other variables have defaults
+in `variables.tf`.
 
 | Variable | Type | Default | Required | Description |
 |---|---|---|---|---|
 | `proxmox_endpoint` | string | none | yes | Proxmox API URL of a node in the `noble` cluster, for example `https://192.168.10.10:8006/`. |
-| `proxmox_api_token` | string (sensitive) | none | yes | Proxmox API token in `user@realm!token-id=uuid` form. |
+| `proxmox_api_token` | string (sensitive) | none | yes | Proxmox API token in `user@realm!token-id=uuid` form. Set via the `TF_VAR_proxmox_api_token` environment variable, not in `terraform.tfvars`. |
 | `proxmox_insecure` | bool | `true` | no | Skip TLS certificate verification for the Proxmox API. |
 | `talos_version` | string | `v1.13.7` | no | Talos release to install. |
 | `talos_schematic_id` | string | `376567988ad370138ad8b2698212367b8edcb69b5fd68c80be1f2ec7d603b4ba` | no | Talos Image Factory schematic ID for the installer image. The default is the schematic for no extensions. |
@@ -88,14 +92,16 @@ other variables have defaults in `variables.tf`.
 
 1. Change to the `terraform` directory.
 2. Copy `terraform.tfvars.example` to `terraform.tfvars`.
-3. In `terraform.tfvars`, set `proxmox_endpoint` and `proxmox_api_token`.
-   Leave the other variables at their defaults unless your setup differs
-   from the talos.md and proxmox.md documents.
-4. Run `terraform init`.
-5. Run `terraform plan`.
-6. Review the plan output.
-7. Run `terraform apply`.
-8. Run `terraform output talos_vms` to get each VM's Proxmox node, VM ID,
+3. In `terraform.tfvars`, set `proxmox_endpoint`. Leave the other variables
+   at their defaults unless your setup differs from the talos.md and
+   proxmox.md documents.
+4. Export `TF_VAR_proxmox_api_token` in your shell with your Proxmox API
+   token. Do not put it in `terraform.tfvars`.
+5. Run `terraform init`.
+6. Run `terraform plan`.
+7. Review the plan output.
+8. Run `terraform apply`.
+9. Run `terraform output talos_vms` to get each VM's Proxmox node, VM ID,
    and planned IP addresses.
 9. For each VM, generate a Talos machine configuration with `talosctl gen
    config`.
