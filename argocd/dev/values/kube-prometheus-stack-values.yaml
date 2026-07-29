@@ -32,6 +32,35 @@ prometheus:
 
 grafana:
   adminPassword: dev-admin-changeme
+  # client_secret is read from the grafana-oidc-secret Secret (decrypted by
+  # sops-secrets-operator from ../manifests/secrets/grafana-oidc.yaml) via
+  # $__env{} ini substitution - the chart's client-side lint
+  # (assertNoLeakedSecrets) refuses to template a literal client_secret into
+  # the grafana.ini ConfigMap/Secret otherwise. client_id isn't secret-shaped
+  # enough to trip that lint, so it stays literal here.
+  envFromSecret: grafana-oidc-secret
+  grafana.ini:
+    server:
+      root_url: https://grafana.lab.pcenicni.dev
+    auth:
+      oauth_auto_login: false
+      signout_redirect_url: https://auth.lab.pcenicni.dev/application/o/grafana/end-session/
+    auth.generic_oauth:
+      enabled: true
+      name: authentik
+      client_id: 703e52b7c23541e156a38d218f1737b6
+      client_secret: "$__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}"
+      scopes: "openid profile email"
+      auth_url: https://auth.lab.pcenicni.dev/application/o/authorize/
+      token_url: https://auth.lab.pcenicni.dev/application/o/token/
+      api_url: https://auth.lab.pcenicni.dev/application/o/userinfo/
+      # authentik's default "profile" scope mapping returns a "groups" claim
+      # with the user's authentik group names - map the three Grafana groups
+      # from the authentik-blueprints ConfigMap to Grafana's three org roles,
+      # falling back to Viewer for anyone authenticated but ungrouped.
+      role_attribute_path: "contains(groups[*], 'Grafana Admins') && 'Admin' || contains(groups[*], 'Grafana Editors') && 'Editor' || 'Viewer'"
+      role_attribute_strict: false
+      allow_sign_up: true
   persistence:
     enabled: true
     storageClassName: local-path
