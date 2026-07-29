@@ -1,0 +1,62 @@
+# external-dns - values for the external-dns Helm chart. See
+# ../apps/external-dns.yaml.
+#
+# Watches Ingress resources cluster-wide (sources: [ingress]) and manages
+# matching A records in pi-hole's custom DNS list, so a new Ingress host
+# under lab.pcenicni.dev gets a working DNS record automatically instead of
+# needing one added by hand - see the "SSO / authentik" section of
+# ../../README.md for why pods inside the cluster need this to actually
+# resolve to Traefik's own IP rather than falling through to public DNS.
+sources:
+  - ingress
+
+# pi-hole's custom DNS list has no per-app ownership tracking (no TXT
+# records, no zones - see `registry: noop` below), and this same pi-hole
+# already has many hand-managed entries unrelated to this cluster.
+# upsert-only means external-dns only ever creates or updates records for
+# hosts it currently sees on an Ingress - it never deletes anything, even if
+# an Ingress is later removed. Safer default for a shared pi-hole; delete
+# stale records by hand if that ever matters.
+policy: upsert-only
+
+# pi-hole's custom DNS API is a flat list of "IP hostname" pairs - it has no
+# TXT record support, so external-dns can't track which records it owns via
+# the normal txt registry. noop means it manages state purely by comparing
+# current Ingress hosts against pi-hole's list each cycle.
+registry: noop
+
+# Only ever touch lab.pcenicni.dev names - every Ingress host in this
+# cluster already lives under this domain (see ../manifests/ingress-apps/),
+# and this pi-hole has plenty of other unrelated custom DNS entries for the
+# rest of the home lab that this should never go near.
+domainFilters:
+  - lab.pcenicni.dev
+
+provider:
+  name: pihole
+
+# CHANGEME: only one pi-hole exists today (192.168.1.127) - update
+# pihole-server if/when a synced pi-hole HA setup replaces it as the DNS
+# source of truth. --pihole-tls-skip-verify is needed because pi-hole's
+# admin UI serves a self-signed cert for its LAN IP.
+extraArgs:
+  pihole-server: https://192.168.1.127
+  pihole-api-version: "6"
+  pihole-tls-skip-verify: "true"
+
+# CHANGEME: pihole-credentials is a SOPS-encrypted Secret - see
+# ../manifests/secrets/pihole.yaml and ../../README.md's "Secrets
+# management" section.
+env:
+  - name: EXTERNAL_DNS_PIHOLE_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: pihole-credentials
+        key: EXTERNAL_DNS_PIHOLE_PASSWORD
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
