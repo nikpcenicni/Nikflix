@@ -1,0 +1,56 @@
+# Prowlarr - values for the bjw-s/app-template Helm chart. See
+# ../apps/prowlarr.yaml. Indexer manager - no downloads/library NFS mount
+# needed, only its own config. See
+# docs/architecture/media-stack.md#components.
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: lscr.io/linuxserver/prowlarr
+          tag: latest
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          # Adjust to your local timezone.
+          TZ: "Etc/UTC"
+        resources:
+          requests:
+            cpu: 25m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 9696
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: prowlarr.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["prowlarr.lab.pcenicni.dev"]
+        secretName: prowlarr-tls
+
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    globalMounts:
+      - path: /config

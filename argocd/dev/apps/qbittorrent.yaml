@@ -1,0 +1,33 @@
+# qBittorrent - torrent download client, routed through a PIA VPN via a
+# gluetun sidecar (only download client that needs one - see
+# docs/architecture/media-stack.md#components). Values in
+# ../values/qbittorrent-values.yaml. Depends on the secrets Application
+# (../manifests/secrets/qbittorrent-vpn.yaml) having synced first, and on
+# that SopsSecret having real PIA credentials filled in via sops - see
+# ../../README.md's "Media stack" section.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: qbittorrent
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/qbittorrent-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: media
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

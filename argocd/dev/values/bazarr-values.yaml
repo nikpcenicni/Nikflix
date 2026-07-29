@@ -1,0 +1,75 @@
+# Bazarr - values for the bjw-s/app-template Helm chart. See
+# ../apps/bazarr.yaml. See docs/architecture/media-stack.md#components.
+# Mounts the same library export at /tv and /movies as Sonarr and Radarr do,
+# so its path mapping lines up with theirs without needing path substitution.
+#
+# PLACEHOLDER: the nfs server/path values below are not yet real - fill in
+# the NAS's actual VLAN 80 IP/hostname and export paths, then remove this
+# comment. Until then the sync itself will succeed, but the pod will hang
+# in ContainerCreating trying to mount a nonexistent NFS export.
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: lscr.io/linuxserver/bazarr
+          tag: latest
+        env:
+          PUID: "1000"
+          PGID: "1000"
+          # Adjust to your local timezone.
+          TZ: "Etc/UTC"
+        resources:
+          requests:
+            cpu: 25m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 6767
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: bazarr.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["bazarr.lab.pcenicni.dev"]
+        secretName: bazarr-tls
+
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    globalMounts:
+      - path: /config
+  tv:
+    enabled: true
+    type: nfs
+    server: CHANGEME-nas-ip # e.g. 192.168.80.50
+    path: /CHANGEME-library-export
+    globalMounts:
+      - path: /tv
+  movies:
+    enabled: true
+    type: nfs
+    server: CHANGEME-nas-ip
+    path: /CHANGEME-library-export
+    globalMounts:
+      - path: /movies
