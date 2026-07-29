@@ -1,7 +1,9 @@
 # Copy to terraform.tfvars (gitignored) and fill in.
 
 proxmox_endpoint  = "https://192.168.10.10:8006/"
-proxmox_api_token = "terraform@pve!terraform=00000000-0000-0000-0000-000000000000"
+# Do not set proxmox_api_token here. Export it as an environment variable
+# instead: TF_VAR_proxmox_api_token="terraform@pve!terraform=<uuid>". This
+# keeps the token out of any file on disk. See README.md's Variables section.
 
 # Leave these at their defaults unless your setup differs:
 # talos_version           = "v1.13.7"

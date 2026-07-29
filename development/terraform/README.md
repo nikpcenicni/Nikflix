@@ -96,10 +96,16 @@ Set these variables in `terraform.tfvars`. Create this file by copying
 `terraform.tfvars` from version control, but it does track
 `terraform.tfvars.example`.
 
+`proxmox_api_token` is the exception: set it as an environment variable,
+`export TF_VAR_proxmox_api_token="user@realm!token-id=uuid"`, instead of in
+`terraform.tfvars`. Terraform maps any `TF_VAR_<name>` environment variable
+to the matching declared variable automatically, so the token never needs
+to sit in plaintext on disk.
+
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `proxmox_endpoint` | Yes | none | Proxmox API URL of any node in the cluster, for example `https://192.168.10.10:8006/`. |
-| `proxmox_api_token` | Yes | none | Proxmox API token, in `user@realm!token-id=uuid` form. |
+| `proxmox_api_token` | Yes | none | Proxmox API token, in `user@realm!token-id=uuid` form. Set via the `TF_VAR_proxmox_api_token` environment variable, not in `terraform.tfvars`. |
 | `proxmox_insecure` | No | `true` | Skip Transport Layer Security (TLS) certificate verification against the Proxmox API. |
 | `talos_version` | No | `v1.13.7` | Talos release to install. |
 | `talos_schematic_id` | No | Image Factory "no extensions" ID | Schematic ID from the Talos Image Factory, for the installer image. |
@@ -116,7 +122,8 @@ Set these variables in `terraform.tfvars`. Create this file by copying
 2. Copy the example variable file: `cp terraform.tfvars.example terraform.tfvars`.
 3. Open `terraform.tfvars` and set `proxmox_endpoint` to your Proxmox API
    URL.
-4. Set `proxmox_api_token` to your Proxmox API token in the same file.
+4. Export `TF_VAR_proxmox_api_token` in your shell with your Proxmox API
+   token. Do not put it in `terraform.tfvars`.
 5. Run `terraform init` to download the `bpg/proxmox` provider.
 6. Run `terraform plan` to check the planned changes.
 7. Run `terraform apply` to create the VMs.
