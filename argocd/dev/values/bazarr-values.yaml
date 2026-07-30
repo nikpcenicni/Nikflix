@@ -1,12 +1,18 @@
 # Bazarr - values for the bjw-s/app-template Helm chart. See
 # ../apps/bazarr.yaml. See docs/architecture/media-stack.md#components.
-# Mounts the same library export at /tv and /movies as Sonarr and Radarr do,
-# so its path mapping lines up with theirs without needing path substitution.
+# Mounts the same media library export as Sonarr and Radarr, at the same
+# /media path, so its view of the library matches theirs exactly.
 #
-# PLACEHOLDER: the nfs server/path values below are not yet real - fill in
-# the NAS's actual VLAN 80 IP/hostname and export paths, then remove this
-# comment. Until then the sync itself will succeed, but the pod will hang
-# in ContainerCreating trying to mount a nonexistent NFS export.
+# NAS is 192.168.50.105 (OpenMediaVault, VLAN 50 - an interim stand-in for
+# the target-state VLAN 80 NAS, see ../../README.md's "Media stack"
+# section). Export path assumes OMV exports the shared folder's real
+# filesystem path directly (/srv/mergerfs/Pool/Data/media) - confirm
+# against `cat /etc/exports` on the NAS if this ever looks wrong.
+#
+# PUID/PGID match the NAS's `media` system account (uid=1004, gid=100 -
+# the shared `users` group other data on this NAS already uses). UMASK=002
+# keeps newly-created files (subtitles) group-writable, matching the
+# setgid bit already set on this NFS export.
 controllers:
   main:
     containers:
@@ -15,8 +21,9 @@ controllers:
           repository: lscr.io/linuxserver/bazarr
           tag: latest
         env:
-          PUID: "1000"
-          PGID: "1000"
+          PUID: "1004"
+          PGID: "100"
+          UMASK: "002"
           # Adjust to your local timezone.
           TZ: "Etc/UTC"
         resources:
@@ -59,17 +66,10 @@ persistence:
     storageClass: local-path
     globalMounts:
       - path: /config
-  tv:
+  media:
     enabled: true
     type: nfs
-    server: CHANGEME-nas-ip # e.g. 192.168.80.50
-    path: /CHANGEME-library-export
+    server: "192.168.50.105"
+    path: /srv/mergerfs/Pool/Data/media
     globalMounts:
-      - path: /tv
-  movies:
-    enabled: true
-    type: nfs
-    server: CHANGEME-nas-ip
-    path: /CHANGEME-library-export
-    globalMounts:
-      - path: /movies
+      - path: /media
