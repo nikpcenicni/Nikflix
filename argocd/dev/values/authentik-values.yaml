@@ -317,6 +317,17 @@ additionalObjects:
               slug: media-stack
               provider: !KeyOf provider-media-forward-auth
               policy_engine_mode: any
+          # NOTE: providers uses !Find (a live DB lookup), not !KeyOf (a
+          # blueprint-internal reference) - !KeyOf inside a list item for
+          # this field hits a real bug in authentik 2026.5.6's blueprint
+          # importer (crashes trying to log an EntryInvalidError while
+          # resolving it, instead of reporting the real error cleanly).
+          # !Find sidesteps it entirely. Verified directly against a live
+          # authentik shell (Importer.from_string(...).validate()) before
+          # settling on this - see git history for the debugging trail.
+          # `config.authentik_host` is also required by the serializer
+          # despite having a model-level default - leaving it out fails
+          # with "This field is required."
           - model: authentik_outposts.outpost
             id: outpost-media-forward-auth
             identifiers:
@@ -324,5 +335,7 @@ additionalObjects:
             attrs:
               name: "Media stack outpost"
               type: proxy
+              config:
+                authentik_host: "https://auth.lab.pcenicni.dev"
               providers:
-                - !KeyOf provider-media-forward-auth
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "Media stack forward auth"]]
