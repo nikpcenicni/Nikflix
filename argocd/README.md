@@ -311,6 +311,61 @@ them to each other by hand, once, through their own web UIs:
 4. **Jellyseerr** - connect to Sonarr and Radarr, and to Jellyfin on the
    Mac Mini (point it at the SMB library share).
 
+### SSO: authentik forward-auth (domain level)
+
+`sonarr`, `radarr`, `prowlarr`, `bazarr`, `qbittorrent`, and `sabnzbd` sit
+behind authentik SSO - `jellyseerr` deliberately doesn't, since it's the
+app household members use directly. None of these apps support OIDC/SAML
+natively, so this uses authentik's **forward-auth (domain level)** proxy
+mode instead of the OAuth2 pattern [SSO / authentik](#sso--authentik)
+describes for Grafana/ArgoCD/Headlamp: one login, via cookie_domain
+`lab.pcenicni.dev`, covers every protected host - no separate login per
+app.
+
+The pieces, across three Applications:
+
+- **`authentik`** (the blueprint) creates one `ProxyProvider` (mode
+  `forward_domain`), one `Application`, and one `Outpost` DB object -
+  see the "Media stack forward auth" entries in `dev/values/authentik-values.yaml`.
+- **`authentik-outpost`** deploys the actual outpost pod (raw manifests in
+  `dev/manifests/authentik-outpost/`) - `ghcr.io/goauthentik/proxy`,
+  version-pinned to match the authentik server/worker exactly. This isn't
+  authentik-managed (no Docker/Kubernetes service-connection configured),
+  so it's a plain Deployment/Service tracked like any other app here.
+- **`media-forward-auth`** is a Traefik `Middleware` CRD
+  (`dev/manifests/media-forward-auth/`) pointing at the outpost's
+  `/outpost.goauthentik.io/auth/traefik` endpoint. Each protected app's
+  Ingress references it via the
+  `traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd`
+  annotation in its own values file.
+
+**Bootstrapping the outpost token**: authentik auto-creates a service
+account and API token for every Outpost, but that token can't be set
+declaratively via blueprint - it's generated after the Outpost object
+first exists. `dev/manifests/secrets/authentik-outpost-media-token.yaml`
+starts as a placeholder SopsSecret; fill in the real token once, the same
+bootstrap pattern as `sops-age-key`/`cloudflare-api-token`:
+
+```sh
+# From an authentik shell (e.g. kubectl exec into the worker pod, `ak shell`):
+#   from authentik.outposts.models import Outpost
+#   from authentik.core.models import Token
+#   o = Outpost.objects.get(name="Media stack outpost")
+#   Token.objects.get(user=o.user, intent="api").key
+# then:
+sops argocd/dev/manifests/secrets/authentik-outpost-media-token.yaml
+```
+
+CAUTION: `!KeyOf` inside a list item (e.g. `providers: [!KeyOf some-id]`)
+hits a real bug in authentik 2026.5.6's blueprint importer - it crashes
+trying to *log* the resulting `EntryInvalidError` instead of reporting it
+cleanly, which makes the failure look like nothing in both the admin UI
+and the worker's logs. Use `!Find` (a live DB lookup by field match)
+instead for this specific case - see the comment on the Outpost entry in
+`dev/values/authentik-values.yaml`. The Outpost serializer also requires
+an explicit `config.authentik_host` despite the model having a default -
+omitting it fails with a plain "This field is required."
+
 ## Configuring the authentik admin account
 
 ### First login
