@@ -1,0 +1,22 @@
+# Traefik ForwardAuth Middleware for the media stack's authentik SSO -
+# ../manifests/media-forward-auth/. Depends on authentik-outpost having
+# synced first (the middleware's forwardAuth.address points at that
+# outpost's Service).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: media-forward-auth
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/media-forward-auth
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: media
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

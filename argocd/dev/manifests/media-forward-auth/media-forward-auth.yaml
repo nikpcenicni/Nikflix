@@ -1,0 +1,24 @@
+# Traefik ForwardAuth middleware for the media stack's authentik-backed
+# SSO. Referenced by sonarr/radarr/prowlarr/bazarr/qbittorrent/sabnzbd's
+# Ingress annotations (traefik.ingress.kubernetes.io/router.middlewares) in
+# their values files - not jellyseerr, see argocd/README.md's "Media stack"
+# section. Points at the authentik-outpost Application
+# (../authentik-outpost/) - domain-level forward auth, so one login covers
+# every *.lab.pcenicni.dev host in cookie_domain, not just this namespace's
+# apps.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: authentik-forward-auth
+  namespace: media
+spec:
+  forwardAuth:
+    address: http://authentik-outpost-media.authentik.svc.cluster.local:9000/outpost.goauthentik.io/auth/traefik
+    trustForwardHeader: true
+    authResponseHeaders:
+      - Set-Cookie
+      - X-authentik-username
+      - X-authentik-groups
+      - X-authentik-email
+      - X-authentik-name
+      - X-authentik-uid
