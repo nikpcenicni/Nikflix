@@ -26,6 +26,12 @@ spec:
     server: https://kubernetes.default.svc
     namespace: media
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        # gluetun needs NET_ADMIN, which the cluster's default PodSecurity
+        # level (baseline) rejects. Same pattern as monitoring/metallb-system/
+        # local-path-storage, just declared here instead of by hand.
+        pod-security.kubernetes.io/enforce: privileged
     automated:
       prune: true
       selfHeal: true
