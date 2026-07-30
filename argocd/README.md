@@ -311,11 +311,22 @@ authentik's blueprint ConfigMap does, so `media-bootstrap` (raw manifests
 in `dev/manifests/media-bootstrap/`) wires them together via their own
 REST APIs instead of clicking through each web UI by hand:
 
-- **Sonarr** - root folder set to `/media/tv`.
-- **Radarr** - root folder set to `/media/movies`.
+- **Sonarr** - root folder set to `/media/tv`; native login disabled (see
+  below).
+- **Radarr** - root folder set to `/media/movies`; native login disabled.
 - **Prowlarr** - Sonarr and Radarr added as Applications; qBittorrent and
   SABnzbd added as download clients.
 - **Bazarr** - connected to both Sonarr and Radarr.
+
+Sonarr and Radarr each also have their own native login (a mandatory
+"create an account" prompt on first UI access) that's entirely separate
+from - and unaware of - authentik's forward-auth already in front of
+them. The bootstrap Job sets both apps' `authenticationRequired` to
+`disabledForLocalAddresses` via `PUT /api/v3/config/host/1`, which
+bypasses their own auth for any private-range source IP - covering all
+in-cluster traffic, including from Traefik, since this cluster's
+pod/service CIDRs are themselves private ranges. authentik stays the one
+real gatekeeper.
 
 This Application is **not** automated-sync - Jobs are immutable after
 creation, so ArgoCD's usual prune/selfHeal would fight with a Job that

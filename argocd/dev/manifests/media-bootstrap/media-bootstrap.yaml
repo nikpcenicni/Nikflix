@@ -72,6 +72,41 @@ data:
         ;;
     esac
 
+    # Sonarr/Radarr each have their own native login (a mandatory
+    # "create an account" prompt on first UI access) that's entirely
+    # separate from authentik's forward-auth in front of them - the two
+    # don't know about each other. "disabledForLocalAddresses" bypasses
+    # Sonarr/Radarr's own auth for any request from a private-range
+    # source IP, which covers all in-cluster traffic (including from
+    # Traefik) given this cluster's pod/service CIDRs are themselves
+    # private ranges - so authentik stays the sole real gatekeeper.
+    # PUT requires the full host config object, not a partial patch, so
+    # this fetches the current one and edits just this one field with
+    # sed rather than reconstructing the whole object by hand.
+    echo "--- Sonarr: disable native auth (authentik already gatekeeps) ---"
+    CURRENT=$(curl -s -H "X-Api-Key: $SONARR_API_KEY" "http://sonarr.media.svc.cluster.local:8989/api/v3/config/host")
+    case "$CURRENT" in
+      *'"authenticationRequired": "disabledForLocalAddresses"'*) echo "already set" ;;
+      *)
+        UPDATED=$(echo "$CURRENT" | sed -E 's/"authenticationRequired": "[^"]*"/"authenticationRequired": "disabledForLocalAddresses"/')
+        curl -sf -X PUT -H "X-Api-Key: $SONARR_API_KEY" -H "Content-Type: application/json" \
+          -d "$UPDATED" "http://sonarr.media.svc.cluster.local:8989/api/v3/config/host/1" >/dev/null
+        echo "set disabledForLocalAddresses"
+        ;;
+    esac
+
+    echo "--- Radarr: disable native auth (authentik already gatekeeps) ---"
+    CURRENT=$(curl -s -H "X-Api-Key: $RADARR_API_KEY" "http://radarr.media.svc.cluster.local:7878/api/v3/config/host")
+    case "$CURRENT" in
+      *'"authenticationRequired": "disabledForLocalAddresses"'*) echo "already set" ;;
+      *)
+        UPDATED=$(echo "$CURRENT" | sed -E 's/"authenticationRequired": "[^"]*"/"authenticationRequired": "disabledForLocalAddresses"/')
+        curl -sf -X PUT -H "X-Api-Key: $RADARR_API_KEY" -H "Content-Type: application/json" \
+          -d "$UPDATED" "http://radarr.media.svc.cluster.local:7878/api/v3/config/host/1" >/dev/null
+        echo "set disabledForLocalAddresses"
+        ;;
+    esac
+
     echo "--- Prowlarr -> Sonarr application ---"
     EXISTING=$(curl -s -H "X-Api-Key: $PROWLARR_API_KEY" "http://prowlarr.media.svc.cluster.local:9696/api/v1/applications")
     case "$EXISTING" in
