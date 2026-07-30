@@ -1,0 +1,78 @@
+# authentik proxy outpost for the media stack's forward-auth. Handles the
+# actual auth-check calls Traefik's forwardAuth middleware makes - see
+# ../../apps/authentik-outpost.yaml and the "Media stack forward auth"
+# entries in ../../values/authentik-values.yaml's blueprint.
+#
+# Deployed by hand (not authentik-managed) since this cluster has no
+# Docker/Kubernetes service-connection configured for authentik to deploy
+# outposts itself - same reasoning as every other by-hand-installed piece
+# in this repo before it's brought under GitOps, except this one has no
+# by-hand phase at all; it's tracked from the start.
+#
+# Image tag pinned to match the authentik server/worker version exactly
+# (2026.5.6) - authentik strongly recommends outpost and server versions
+# match. Bump both together on future authentik upgrades.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authentik-outpost-media
+  namespace: authentik
+  labels:
+    app.kubernetes.io/name: authentik-outpost-media
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik-outpost-media
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: authentik-outpost-media
+    spec:
+      containers:
+        - name: proxy
+          image: ghcr.io/goauthentik/proxy:2026.5.6
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: https
+              containerPort: 9443
+            - name: metrics
+              containerPort: 9300
+          env:
+            # Reached over the public ingress hostname (not an internal
+            # Service DNS name) so the outpost validates a real cert and
+            # matches the same pattern other apps' server-to-server OIDC
+            # calls already use - see argocd/README.md's "SSO / authentik"
+            # section on why coredns makes this resolve in-cluster.
+            - name: AUTHENTIK_HOST
+              value: "https://auth.lab.pcenicni.dev"
+            - name: AUTHENTIK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: authentik-outpost-media-token
+                  key: token
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authentik-outpost-media
+  namespace: authentik
+  labels:
+    app.kubernetes.io/name: authentik-outpost-media
+spec:
+  selector:
+    app.kubernetes.io/name: authentik-outpost-media
+  ports:
+    - name: http
+      port: 9000
+      targetPort: http
+    - name: https
+      port: 9443
+      targetPort: https

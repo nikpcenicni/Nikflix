@@ -286,3 +286,43 @@ additionalObjects:
               provider: !KeyOf provider-headlamp
               policy_engine_mode: any
               meta_launch_url: "https://headlamp.lab.pcenicni.dev"
+
+          # --- Media stack forward-auth (domain level) --------------------
+          # Single Proxy Provider covers every *.lab.pcenicni.dev host via
+          # cookie_domain, rather than one provider per app - login once,
+          # reach sonarr/radarr/prowlarr/bazarr/qbittorrent/sabnzbd without
+          # re-authenticating. Jellyseerr is deliberately not behind this -
+          # see argocd/README.md's "Media stack" section. The outpost this
+          # provider is assigned to is deployed by hand (raw manifests in
+          # ../manifests/authentik-outpost/, not authentik-managed), since
+          # this cluster has no Docker/Kubernetes service-connection set up
+          # for authentik to deploy outposts itself.
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-media-forward-auth
+            identifiers:
+              name: "Media stack forward auth"
+            attrs:
+              name: "Media stack forward auth"
+              mode: forward_domain
+              cookie_domain: lab.pcenicni.dev
+              external_host: "https://sonarr.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-media-forward-auth
+            identifiers:
+              slug: media-stack
+            attrs:
+              name: "Media stack"
+              slug: media-stack
+              provider: !KeyOf provider-media-forward-auth
+              policy_engine_mode: any
+          - model: authentik_outposts.outpost
+            id: outpost-media-forward-auth
+            identifiers:
+              name: "Media stack outpost"
+            attrs:
+              name: "Media stack outpost"
+              type: proxy
+              providers:
+                - !KeyOf provider-media-forward-auth

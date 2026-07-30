@@ -1,0 +1,25 @@
+# Raw manifests (Deployment + Service) for the media stack's authentik
+# proxy outpost - ../manifests/authentik-outpost/. Depends on the
+# authentik-blueprints ConfigMap (in the authentik Application) having
+# synced first, since the outpost's Provider/Application/Outpost DB objects
+# it references are created there, and on the
+# authentik-outpost-media-token SopsSecret (../manifests/secrets/) having
+# real credentials - see ../../README.md's "Media stack" section.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: authentik-outpost
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/authentik-outpost
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: authentik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
