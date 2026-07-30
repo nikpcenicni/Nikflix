@@ -70,6 +70,6 @@ persistence:
     enabled: true
     type: nfs
     server: "192.168.50.105"
-    path: /srv/mergerfs/Pool/Data/media
+    path: /export/media
     globalMounts:
       - path: /media

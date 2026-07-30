@@ -70,7 +70,7 @@ persistence:
     enabled: true
     type: nfs
     server: "192.168.50.105"
-    path: /srv/mergerfs/Pool/Data/torrents
+    path: /export/torrents
     globalMounts:
       - path: /torrents
   # SABnzbd's completed downloads land here.
@@ -78,7 +78,7 @@ persistence:
     enabled: true
     type: nfs
     server: "192.168.50.105"
-    path: /srv/mergerfs/Pool/Data/usenet
+    path: /export/usenet
     globalMounts:
       - path: /usenet
   # The shared library - Radarr's root folder gets set to /media/movies
@@ -87,6 +87,6 @@ persistence:
     enabled: true
     type: nfs
     server: "192.168.50.105"
-    path: /srv/mergerfs/Pool/Data/media
+    path: /export/media
     globalMounts:
       - path: /media

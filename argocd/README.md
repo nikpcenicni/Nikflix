@@ -245,11 +245,11 @@ is built. This NAS already had an existing layout from a prior *arr setup,
 so the mounts follow that instead of media-stack.md's simpler
 `downloads/`+`library/` split:
 
-| NFS export | Mounted at `/torrents` in | Mounted at `/usenet` in | Mounted at `/media` in |
+| NFS export (OMV `/export/*` alias, not the raw `/srv/mergerfs/...` path) | Mounted at `/torrents` in | Mounted at `/usenet` in | Mounted at `/media` in |
 |---|---|---|---|
-| `/srv/mergerfs/Pool/Data/torrents` | qbittorrent, sonarr, radarr | - | - |
-| `/srv/mergerfs/Pool/Data/usenet` | - | sabnzbd, sonarr, radarr | - |
-| `/srv/mergerfs/Pool/Data/media` | - | - | sonarr, radarr, bazarr |
+| `/export/torrents` | qbittorrent, sonarr, radarr | - | - |
+| `/export/usenet` | - | sabnzbd, sonarr, radarr | - |
+| `/export/media` | - | - | sonarr, radarr, bazarr |
 
 Sonarr and Radarr each mount all three, since either can import from
 either download client, then move the finished file into `/media` (see
@@ -257,9 +257,10 @@ either download client, then move the finished file into `/media` (see
 for why the design moves completed downloads into the library instead of
 hardlinking them). Sonarr's and Radarr's own root-folder settings get
 pointed at `/media/tv` and `/media/movies` respectively through their web
-UIs - see "First-time setup" below. These export paths assume OMV exports
-each shared folder's real filesystem path directly - confirm against
-`cat /etc/exports` on the NAS if a mount ever fails unexpectedly.
+UIs - see "First-time setup" below. `192.168.10.0/24` (the Talos VMs'
+actual network) is already permitted on all three exports per
+`/etc/exports` on the NAS - confirm against that file directly if a mount
+ever fails unexpectedly.
 
 `PUID`/`PGID` on every container are `1004`/`100`, matching the NAS's
 `media` system account and the `users` group the existing data already
