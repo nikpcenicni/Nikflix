@@ -43,9 +43,12 @@ argocd/
 │   │   ├── traefik.yaml
 │   │   ├── argocd.yaml
 │   │   ├── argocd-config.yaml
+│   │   ├── authentik-outpost.yaml
 │   │   ├── cluster-issuers.yaml
 │   │   ├── coredns.yaml
 │   │   ├── ingress-apps.yaml
+│   │   ├── media-bootstrap.yaml
+│   │   ├── media-forward-auth.yaml
 │   │   ├── metallb-pool.yaml
 │   │   └── secrets.yaml
 │   ├── values/
@@ -69,9 +72,12 @@ argocd/
 │   └── manifests/
 │       ├── argocd/              # vendored copy of ArgoCD's own install manifest
 │       ├── argocd-config/
+│       ├── authentik-outpost/
 │       ├── cluster-issuers/
 │       ├── coredns/
 │       ├── ingress-apps/
+│       ├── media-bootstrap/
+│       ├── media-forward-auth/
 │       ├── metallb-pool/
 │       └── secrets/            # SOPS-encrypted SopsSecret resources - see "Secrets management" below
 └── prod/                      # Applications specific to the production cluster (empty scaffold)
@@ -103,10 +109,11 @@ groups:
   git repository for the matching values file in that cluster's `values/`.
   ArgoCD calls this a
   [multi-source Application](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/).
-- **Raw-manifest Applications** (`argocd`, `argocd-config`, `cluster-issuers`,
-  `coredns`, `ingress-apps`, `metallb-pool`, `secrets` in `dev/`) each use
-  one source: a directory of plain Kubernetes manifests under that
-  cluster's `manifests/`.
+- **Raw-manifest Applications** (`argocd`, `argocd-config`,
+  `authentik-outpost`, `cluster-issuers`, `coredns`, `ingress-apps`,
+  `media-bootstrap`, `media-forward-auth`, `metallb-pool`, `secrets` in
+  `dev/`) each use one source: a directory of plain Kubernetes manifests
+  under that cluster's `manifests/`.
 
 ## Applications (dev)
 
@@ -131,9 +138,12 @@ groups:
 | `traefik` | Helm chart `traefik` from the official traefik chart repository, values in `dev/values/traefik-values.yaml` | `traefik` | Ingress controller. Brought under GitOps at the chart version already running (`traefik-41.0.2`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `ingress-apps` routes through this. Syncs with `ServerSideApply=true`. |
 | `argocd` | Raw manifests (vendored upstream install manifest) in `dev/manifests/argocd/` | `argocd` | The rest of ArgoCD's own install, beyond what `argocd-config` manages - CRDs, controllers, RBAC. ArgoCD managing itself - see [Applications brought under GitOps](#applications-brought-under-gitops). |
 | `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm`, `argocd-rbac-cm`, and `argocd-cmd-params-cm` ConfigMaps that ArgoCD's own install created. Wires up OIDC login against authentik, maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles, and keeps `argocd-server` running in `--insecure` mode since Traefik terminates TLS. |
+| `authentik-outpost` | Raw manifests in `dev/manifests/authentik-outpost/` | `authentik` | Deployment/Service for the media stack's authentik proxy outpost - see [SSO: authentik forward-auth](#sso-authentik-forward-auth-domain-level). Not authentik-managed (no service-connection configured), so tracked like any other by-hand Deployment. Depends on the `authentik` Application's blueprint and the `authentik-outpost-media-token` SopsSecret. |
 | `cluster-issuers` | Raw manifests in `dev/manifests/cluster-issuers/` | `cert-manager` | cert-manager `ClusterIssuer` resources. The manifests define a Let's Encrypt staging issuer and a Let's Encrypt production issuer, both through a Cloudflare DNS-01 challenge for the `pcenicni.dev` zone. |
 | `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve the four `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
 | `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
+| `media-bootstrap` | Raw manifests in `dev/manifests/media-bootstrap/` | `media` | One-shot Job wiring Prowlarr/Sonarr/Radarr/Bazarr together via their REST APIs - see [Media stack](#media-stack)'s "First-time setup" section. Not automated-sync - sync it by hand when needed. |
+| `media-forward-auth` | Raw manifests in `dev/manifests/media-forward-auth/` | `media` | Traefik `Middleware` for the media stack's authentik SSO - see [SSO: authentik forward-auth](#sso-authentik-forward-auth-domain-level). Depends on `authentik-outpost` having synced first. |
 | `metallb-pool` | Raw manifests in `dev/manifests/metallb-pool/` | `metallb-system` | MetalLB `IPAddressPool` and `L2Advertisement` resources. These resources give MetalLB the address range `192.168.10.240`–`192.168.10.245` to assign to `LoadBalancer` services. |
 | `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, and ArgoCD's OIDC/database credentials, and pi-hole's API password - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
 
@@ -294,22 +304,53 @@ swarm traffic exposes an IP address to peers; SABnzbd's Usenet traffic
 doesn't. See
 [media-stack.md's Components table](../docs/architecture/media-stack.md#components).
 
-### First-time setup is manual, per app
+### First-time setup: automated for everything except Jellyseerr
 
 None of these apps have a declarative bootstrap mechanism the way
-authentik's blueprint ConfigMap does. After each app first syncs, connect
-them to each other by hand, once, through their own web UIs:
+authentik's blueprint ConfigMap does, so `media-bootstrap` (raw manifests
+in `dev/manifests/media-bootstrap/`) wires them together via their own
+REST APIs instead of clicking through each web UI by hand:
 
-1. **Prowlarr** - add Sonarr, Radarr, qBittorrent, and SABnzbd as
-   applications/download clients (their in-cluster Service DNS names, e.g.
-   `http://sonarr.media.svc.cluster.local:8989`), then add indexers.
-2. **Sonarr / Radarr** - add Prowlarr, add qBittorrent and SABnzbd as
-   download clients, and add the `/media/tv` or `/media/movies` root
-   folder.
-3. **Bazarr** - connect to Sonarr and Radarr, and configure subtitle
-   providers.
-4. **Jellyseerr** - connect to Sonarr and Radarr, and to Jellyfin on the
-   Mac Mini (point it at the SMB library share).
+- **Sonarr** - root folder set to `/media/tv`.
+- **Radarr** - root folder set to `/media/movies`.
+- **Prowlarr** - Sonarr and Radarr added as Applications; qBittorrent and
+  SABnzbd added as download clients.
+- **Bazarr** - connected to both Sonarr and Radarr.
+
+This Application is **not** automated-sync - Jobs are immutable after
+creation, so ArgoCD's usual prune/selfHeal would fight with a Job that
+already ran. Sync it by hand once (ArgoCD UI "Sync" button, or
+`argocd app sync media-bootstrap`) after the apps above are healthy; every
+step checks for the thing it's about to create first, so re-syncing later
+is safe. It reads each app's API key/password from the
+`media-bootstrap-api-keys` SopsSecret - these are the apps' own
+auto-generated credentials (LinuxServer.io *arr images and Bazarr
+generate an API key on first boot; qBittorrent has no API key, only a
+WebUI password, so its temporary auto-generated one was reset to a real
+value via qBittorrent's own API rather than kept as the plaintext value
+it logs on first boot), read from the already-running pods once, not set
+by this repo. If an app's PVC is ever wiped and it generates new
+credentials, re-derive and update that Secret before re-syncing this Job.
+
+**Jellyseerr is deliberately not wired up here.** Its first-run flow
+needs interactive admin-account creation (Plex OAuth or a local user),
+which doesn't fit a scripted, API-key-based bootstrap. Connect it by
+hand, once: **Jellyseerr** - connect to Sonarr and Radarr, and to
+Jellyfin on the Mac Mini (point it at the SMB library share).
+
+Two non-obvious bugs surfaced while building the Prowlarr/Bazarr calls -
+see the comments in `dev/manifests/media-bootstrap/media-bootstrap.yaml`
+for the details, and [[nikflix_media_stack_nas]] memory for the full
+debugging trail:
+- Prowlarr 2.5.2's download-client validation throws an unhandled
+  `NullReferenceException` (surfaced as an opaque "Test was aborted due
+  to an error") if the top-level `categories` field is omitted, even as
+  an empty array - found by reading Prowlarr's own container logs for the
+  real .NET stack trace, not from the API's own error response.
+- Bazarr's settings API never casts string form values to `bool` before
+  its dynaconf validator checks them - use dynaconf's `@bool` cast-prefix
+  syntax (`@bool true`/`@bool false`) on those specific fields instead of
+  a plain `true`/`false` string.
 
 ### SSO: authentik forward-auth (domain level)
 

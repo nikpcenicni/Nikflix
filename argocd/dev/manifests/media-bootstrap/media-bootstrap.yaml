@@ -1,0 +1,210 @@
+# One-shot bootstrap Job that wires the media stack together via each
+# app's REST API, instead of clicking through Prowlarr/Sonarr/Radarr/
+# Bazarr's web UIs by hand - see argocd/README.md's "Media stack" section.
+# Not automated-sync (see ../../apps/media-bootstrap.yaml) - Jobs are
+# immutable after creation, so this only runs when explicitly synced
+# (ArgoCD UI "Sync" button, or `argocd app sync media-bootstrap`), not on
+# every reconcile loop. Re-run it any time - every step checks for the
+# thing it's about to create first, so re-running is safe.
+#
+# Jellyseerr is NOT wired here - its first-run flow needs interactive
+# admin-account creation (Plex OAuth or local user), which doesn't fit a
+# scripted API-key-based bootstrap. Connect it by hand once, per
+# argocd/README.md's "First-time setup is manual, per app" section.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: media-bootstrap-script
+  namespace: media
+data:
+  bootstrap.sh: |
+    #!/bin/sh
+    set -eu
+
+    wait_for() {
+      name="$1"; url="$2"
+      echo "Waiting for $name..."
+      i=0
+      while [ "$i" -lt 30 ]; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo 000)
+        case "$code" in
+          200|401|403) echo "$name is up"; return 0 ;;
+        esac
+        i=$((i + 1))
+        sleep 5
+      done
+      echo "$name did not become ready in time" >&2
+      return 1
+    }
+
+    wait_for sonarr "http://sonarr.media.svc.cluster.local:8989/api/v3/system/status"
+    wait_for radarr "http://radarr.media.svc.cluster.local:7878/api/v3/system/status"
+    wait_for prowlarr "http://prowlarr.media.svc.cluster.local:9696/api/v1/system/status"
+    wait_for bazarr "http://bazarr.media.svc.cluster.local:6767/api/system/status"
+
+    echo "--- Sonarr root folder ---"
+    if ! curl -s -H "X-Api-Key: $SONARR_API_KEY" "http://sonarr.media.svc.cluster.local:8989/api/v3/rootfolder" | grep -q '"path":"/media/tv"'; then
+      curl -sf -H "X-Api-Key: $SONARR_API_KEY" -H "Content-Type: application/json" \
+        -d '{"path":"/media/tv"}' "http://sonarr.media.svc.cluster.local:8989/api/v3/rootfolder" >/dev/null
+      echo "set /media/tv"
+    else
+      echo "already set"
+    fi
+
+    echo "--- Radarr root folder ---"
+    if ! curl -s -H "X-Api-Key: $RADARR_API_KEY" "http://radarr.media.svc.cluster.local:7878/api/v3/rootfolder" | grep -q '"path":"/media/movies"'; then
+      curl -sf -H "X-Api-Key: $RADARR_API_KEY" -H "Content-Type: application/json" \
+        -d '{"path":"/media/movies"}' "http://radarr.media.svc.cluster.local:7878/api/v3/rootfolder" >/dev/null
+      echo "set /media/movies"
+    else
+      echo "already set"
+    fi
+
+    echo "--- Prowlarr -> Sonarr application ---"
+    if ! curl -s -H "X-Api-Key: $PROWLARR_API_KEY" "http://prowlarr.media.svc.cluster.local:9696/api/v1/applications" | grep -q '"name":"Sonarr"'; then
+      curl -sf -H "X-Api-Key: $PROWLARR_API_KEY" -H "Content-Type: application/json" -d "{
+          \"syncLevel\":\"fullSync\",\"enable\":true,\"name\":\"Sonarr\",
+          \"fields\":[
+            {\"name\":\"prowlarrUrl\",\"value\":\"http://prowlarr.media.svc.cluster.local:9696\"},
+            {\"name\":\"baseUrl\",\"value\":\"http://sonarr.media.svc.cluster.local:8989\"},
+            {\"name\":\"apiKey\",\"value\":\"$SONARR_API_KEY\"},
+            {\"name\":\"syncCategories\",\"value\":[5000,5010,5020,5030,5040,5045,5050,5090]}
+          ],
+          \"implementationName\":\"Sonarr\",\"implementation\":\"Sonarr\",
+          \"configContract\":\"SonarrSettings\",\"tags\":[]
+        }" "http://prowlarr.media.svc.cluster.local:9696/api/v1/applications" >/dev/null
+      echo "added"
+    else
+      echo "already exists"
+    fi
+
+    echo "--- Prowlarr -> Radarr application ---"
+    if ! curl -s -H "X-Api-Key: $PROWLARR_API_KEY" "http://prowlarr.media.svc.cluster.local:9696/api/v1/applications" | grep -q '"name":"Radarr"'; then
+      curl -sf -H "X-Api-Key: $PROWLARR_API_KEY" -H "Content-Type: application/json" -d "{
+          \"syncLevel\":\"fullSync\",\"enable\":true,\"name\":\"Radarr\",
+          \"fields\":[
+            {\"name\":\"prowlarrUrl\",\"value\":\"http://prowlarr.media.svc.cluster.local:9696\"},
+            {\"name\":\"baseUrl\",\"value\":\"http://radarr.media.svc.cluster.local:7878\"},
+            {\"name\":\"apiKey\",\"value\":\"$RADARR_API_KEY\"},
+            {\"name\":\"syncCategories\",\"value\":[2000,2010,2020,2030,2040,2045,2050,2060,2070,2080,2090]}
+          ],
+          \"implementationName\":\"Radarr\",\"implementation\":\"Radarr\",
+          \"configContract\":\"RadarrSettings\",\"tags\":[]
+        }" "http://prowlarr.media.svc.cluster.local:9696/api/v1/applications" >/dev/null
+      echo "added"
+    else
+      echo "already exists"
+    fi
+
+    # NOTE: "categories" (top-level, distinct from the "category" field
+    # inside fields below) must be present, even as an empty array - Prowlarr
+    # 2.5.2's DownloadClientBase.ValidateCategories() throws an unhandled
+    # NullReferenceException if it's omitted entirely, surfaced to the API
+    # caller as an opaque "Test was aborted due to an error" with no useful
+    # detail. Found by reading Prowlarr's own logs for the real .NET stack
+    # trace - see [[nikflix_media_stack_nas]] memory for the debugging trail.
+    echo "--- Prowlarr -> qBittorrent download client ---"
+    if ! curl -s -H "X-Api-Key: $PROWLARR_API_KEY" "http://prowlarr.media.svc.cluster.local:9696/api/v1/downloadclient" | grep -q '"name":"qBittorrent"'; then
+      curl -sf -H "X-Api-Key: $PROWLARR_API_KEY" -H "Content-Type: application/json" -d "{
+          \"enable\":true,\"protocol\":\"torrent\",\"priority\":1,\"categories\":[],\"name\":\"qBittorrent\",
+          \"fields\":[
+            {\"name\":\"host\",\"value\":\"qbittorrent.media.svc.cluster.local\"},
+            {\"name\":\"port\",\"value\":8080},
+            {\"name\":\"useSsl\",\"value\":false},
+            {\"name\":\"urlBase\",\"value\":\"\"},
+            {\"name\":\"apiKey\",\"value\":\"\"},
+            {\"name\":\"username\",\"value\":\"admin\"},
+            {\"name\":\"password\",\"value\":\"$QBITTORRENT_PASSWORD\"},
+            {\"name\":\"category\",\"value\":\"prowlarr\"},
+            {\"name\":\"priority\",\"value\":0},
+            {\"name\":\"initialState\",\"value\":0},
+            {\"name\":\"sequentialOrder\",\"value\":false},
+            {\"name\":\"firstAndLast\",\"value\":false},
+            {\"name\":\"contentLayout\",\"value\":0}
+          ],
+          \"implementationName\":\"qBittorrent\",\"implementation\":\"QBittorrent\",
+          \"configContract\":\"QBittorrentSettings\",\"tags\":[]
+        }" "http://prowlarr.media.svc.cluster.local:9696/api/v1/downloadclient" >/dev/null
+      echo "added"
+    else
+      echo "already exists"
+    fi
+
+    # category "*" - SABnzbd's own default catch-all. A category name that
+    # doesn't already exist in SABnzbd fails Prowlarr's validation with a
+    # real (not the NullReferenceException above) "Category does not exist"
+    # error.
+    echo "--- Prowlarr -> SABnzbd download client ---"
+    if ! curl -s -H "X-Api-Key: $PROWLARR_API_KEY" "http://prowlarr.media.svc.cluster.local:9696/api/v1/downloadclient" | grep -q '"name":"SABnzbd"'; then
+      curl -sf -H "X-Api-Key: $PROWLARR_API_KEY" -H "Content-Type: application/json" -d "{
+          \"enable\":true,\"protocol\":\"usenet\",\"priority\":1,\"categories\":[],\"name\":\"SABnzbd\",
+          \"fields\":[
+            {\"name\":\"host\",\"value\":\"sabnzbd.media.svc.cluster.local\"},
+            {\"name\":\"port\",\"value\":8080},
+            {\"name\":\"useSsl\",\"value\":false},
+            {\"name\":\"urlBase\",\"value\":\"\"},
+            {\"name\":\"apiKey\",\"value\":\"$SABNZBD_API_KEY\"},
+            {\"name\":\"username\",\"value\":\"\"},
+            {\"name\":\"password\",\"value\":\"\"},
+            {\"name\":\"category\",\"value\":\"*\"},
+            {\"name\":\"priority\",\"value\":-100}
+          ],
+          \"implementationName\":\"SABnzbd\",\"implementation\":\"Sabnzbd\",
+          \"configContract\":\"SabnzbdSettings\",\"tags\":[]
+        }" "http://prowlarr.media.svc.cluster.local:9696/api/v1/downloadclient" >/dev/null
+      echo "added"
+    else
+      echo "already exists"
+    fi
+
+    # Bazarr's save_settings never casts string form values to bool before
+    # dynaconf's is_type_of=bool validator sees them - a plain "true"/"false"
+    # is rejected. Bazarr supports dynaconf's "@bool" cast-prefix syntax on
+    # form values specifically for this; posting is naturally idempotent
+    # (no create-vs-exists distinction needed, unlike the Prowlarr entries
+    # above).
+    echo "--- Bazarr -> Sonarr/Radarr connection ---"
+    curl -sf -X POST -H "X-API-KEY: $BAZARR_API_KEY" \
+      --data-urlencode "settings-general-use_sonarr=@bool true" \
+      --data-urlencode "settings-sonarr-ip=sonarr.media.svc.cluster.local" \
+      --data-urlencode "settings-sonarr-port=8989" \
+      --data-urlencode "settings-sonarr-apikey=$SONARR_API_KEY" \
+      --data-urlencode "settings-sonarr-base_url=/" \
+      --data-urlencode "settings-sonarr-ssl=@bool false" \
+      --data-urlencode "settings-general-use_radarr=@bool true" \
+      --data-urlencode "settings-radarr-ip=radarr.media.svc.cluster.local" \
+      --data-urlencode "settings-radarr-port=7878" \
+      --data-urlencode "settings-radarr-apikey=$RADARR_API_KEY" \
+      --data-urlencode "settings-radarr-base_url=/" \
+      --data-urlencode "settings-radarr-ssl=@bool false" \
+      "http://bazarr.media.svc.cluster.local:6767/api/system/settings" >/dev/null
+    echo "configured"
+
+    echo "Bootstrap complete."
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: media-bootstrap
+  namespace: media
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          image: curlimages/curl:latest
+          command: ["sh", "/scripts/bootstrap.sh"]
+          envFrom:
+            - secretRef:
+                name: media-bootstrap-api-keys
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: media-bootstrap-script
+            defaultMode: 0555
