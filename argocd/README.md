@@ -281,8 +281,8 @@ up a PIA VPN tunnel) and `qbittorrent`. Containers in the same Kubernetes
 pod already share a network namespace, so qBittorrent's traffic rides
 through gluetun's tunnel automatically - no special sidecar wiring needed
 beyond that. `gluetun` needs the `qbittorrent-vpn-credentials` SopsSecret
-(`dev/manifests/secrets/qbittorrent-vpn.yaml`), which currently holds
-placeholder PIA credentials. Fill in the real ones:
+(`dev/manifests/secrets/qbittorrent-vpn.yaml`), which holds PIA account
+credentials. Edit it with:
 
 ```sh
 sops argocd/dev/manifests/secrets/qbittorrent-vpn.yaml
