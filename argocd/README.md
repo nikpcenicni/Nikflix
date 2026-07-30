@@ -234,23 +234,45 @@ Longhorn is deliberately not part of this: see
 and its Open Questions for why Longhorn stays deferred until real per-node
 SSDs are working.
 
-The shared media library and `downloads/` staging area are NFS mounts
-straight to the NAS - `sonarr-values.yaml`, `radarr-values.yaml`,
-`bazarr-values.yaml`, `qbittorrent-values.yaml`, and `sabnzbd-values.yaml`
-each declare these as `persistence.<name>.type: nfs` entries (chart-native,
-no PVC/StorageClass involved). **These currently point at placeholder
-values** (`CHANGEME-nas-ip` and `CHANGEME-*-export`) - replace them with the
-NAS's real VLAN 80 IP/hostname and export paths before relying on this.
-Until then, the affected pods sync fine but hang in `ContainerCreating`
-trying to mount a nonexistent export.
+The shared library and download-staging areas are NFS mounts straight to
+the NAS - `sonarr-values.yaml`, `radarr-values.yaml`, `bazarr-values.yaml`,
+`qbittorrent-values.yaml`, and `sabnzbd-values.yaml` each declare these as
+`persistence.<name>.type: nfs` entries (chart-native, no PVC/StorageClass
+involved). The NFS server is `192.168.50.105` - an old NAS on VLAN 50
+(OpenMediaVault), standing in until the target-state NAS (VLAN 80, per
+[media-stack.md](../docs/architecture/media-stack.md#storage-shared-nas-library))
+is built. This NAS already had an existing layout from a prior *arr setup,
+so the mounts follow that instead of media-stack.md's simpler
+`downloads/`+`library/` split:
 
-Sonarr and Radarr each mount the library export twice under different
-paths (`/tv` and `/movies` respectively) so their own root-folder settings
-match Bazarr's identical `/tv`/`/movies` mounts - see
+| NFS export | Mounted at `/torrents` in | Mounted at `/usenet` in | Mounted at `/media` in |
+|---|---|---|---|
+| `/srv/mergerfs/Pool/Data/torrents` | qbittorrent, sonarr, radarr | - | - |
+| `/srv/mergerfs/Pool/Data/usenet` | - | sabnzbd, sonarr, radarr | - |
+| `/srv/mergerfs/Pool/Data/media` | - | - | sonarr, radarr, bazarr |
+
+Sonarr and Radarr each mount all three, since either can import from
+either download client, then move the finished file into `/media` (see
 [media-stack.md's storage section](../docs/architecture/media-stack.md#storage-shared-nas-library)
 for why the design moves completed downloads into the library instead of
-hardlinking them (the two shares don't have to be the same filesystem this
-way).
+hardlinking them). Sonarr's and Radarr's own root-folder settings get
+pointed at `/media/tv` and `/media/movies` respectively through their web
+UIs - see "First-time setup" below. These export paths assume OMV exports
+each shared folder's real filesystem path directly - confirm against
+`cat /etc/exports` on the NAS if a mount ever fails unexpectedly.
+
+`PUID`/`PGID` on every container are `1004`/`100`, matching the NAS's
+`media` system account and the `users` group the existing data already
+belongs to. `UMASK=002` on the apps that write into these exports keeps
+newly-created files group-writable. Two of the three shares needed a
+one-time permission fix before this would actually work - `media` and
+`torrents` were `755` (owner-only write), while `usenet` already had the
+right setgid + group-write pattern:
+
+```sh
+chmod -R g+w /srv/mergerfs/Pool/Data/media /srv/mergerfs/Pool/Data/torrents
+chmod g+s /srv/mergerfs/Pool/Data/media /srv/mergerfs/Pool/Data/torrents
+```
 
 ### qBittorrent's VPN sidecar
 
@@ -281,7 +303,8 @@ them to each other by hand, once, through their own web UIs:
    applications/download clients (their in-cluster Service DNS names, e.g.
    `http://sonarr.media.svc.cluster.local:8989`), then add indexers.
 2. **Sonarr / Radarr** - add Prowlarr, add qBittorrent and SABnzbd as
-   download clients, and add the `/tv` or `/movies` root folder.
+   download clients, and add the `/media/tv` or `/media/movies` root
+   folder.
 3. **Bazarr** - connect to Sonarr and Radarr, and configure subtitle
    providers.
 4. **Jellyseerr** - connect to Sonarr and Radarr, and to Jellyfin on the

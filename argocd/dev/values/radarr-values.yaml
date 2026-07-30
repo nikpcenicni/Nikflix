@@ -2,10 +2,16 @@
 # ../apps/radarr.yaml. See docs/architecture/media-stack.md#components and
 # #storage-shared-nas-library.
 #
-# PLACEHOLDER: the nfs server/path values below are not yet real - fill in
-# the NAS's actual VLAN 80 IP/hostname and export paths, then remove this
-# comment. Until then the sync itself will succeed, but the pod will hang
-# in ContainerCreating trying to mount a nonexistent NFS export.
+# NAS is 192.168.50.105 (OpenMediaVault, VLAN 50 - an interim stand-in for
+# the target-state VLAN 80 NAS, see ../../README.md's "Media stack"
+# section). Export paths assume OMV exports the shared folder's real
+# filesystem path directly (/srv/mergerfs/Pool/Data/<name>) - confirm
+# against `cat /etc/exports` on the NAS if these ever look wrong.
+#
+# PUID/PGID match the NAS's `media` system account (uid=1004, gid=100 -
+# the shared `users` group other data on this NAS already uses). UMASK=002
+# keeps newly-created files/dirs group-writable, matching the setgid bit
+# already set on these NFS exports.
 controllers:
   main:
     containers:
@@ -14,8 +20,9 @@ controllers:
           repository: lscr.io/linuxserver/radarr
           tag: latest
         env:
-          PUID: "1000"
-          PGID: "1000"
+          PUID: "1004"
+          PGID: "100"
+          UMASK: "002"
           # Adjust to your local timezone.
           TZ: "Etc/UTC"
         resources:
@@ -58,17 +65,28 @@ persistence:
     storageClass: local-path
     globalMounts:
       - path: /config
-  downloads:
+  # qBittorrent's completed downloads land here.
+  torrents:
     enabled: true
     type: nfs
-    server: CHANGEME-nas-ip # e.g. 192.168.80.50
-    path: /CHANGEME-downloads-export
+    server: "192.168.50.105"
+    path: /srv/mergerfs/Pool/Data/torrents
     globalMounts:
-      - path: /downloads
-  movies:
+      - path: /torrents
+  # SABnzbd's completed downloads land here.
+  usenet:
     enabled: true
     type: nfs
-    server: CHANGEME-nas-ip
-    path: /CHANGEME-library-export
+    server: "192.168.50.105"
+    path: /srv/mergerfs/Pool/Data/usenet
     globalMounts:
-      - path: /movies
+      - path: /usenet
+  # The shared library - Radarr's root folder gets set to /media/movies
+  # through its own web UI after first sync.
+  media:
+    enabled: true
+    type: nfs
+    server: "192.168.50.105"
+    path: /srv/mergerfs/Pool/Data/media
+    globalMounts:
+      - path: /media

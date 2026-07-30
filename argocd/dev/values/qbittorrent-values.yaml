@@ -5,10 +5,17 @@
 # through it since they're in the same netns. See
 # docs/architecture/media-stack.md#components.
 #
-# PLACEHOLDER: the nfs server/path values below are not yet real - fill in
-# the NAS's actual VLAN 80 IP/hostname and export path, then remove this
-# comment. Until then the sync itself will succeed, but the pod will hang
-# in ContainerCreating trying to mount a nonexistent NFS export.
+# NAS is 192.168.50.105 (OpenMediaVault, VLAN 50 - an interim stand-in for
+# the target-state VLAN 80 NAS, see ../../README.md's "Media stack"
+# section). Export path assumes OMV exports the shared folder's real
+# filesystem path directly (/srv/mergerfs/Pool/Data/torrents) - confirm
+# against `cat /etc/exports` on the NAS if this ever looks wrong.
+#
+# PUID/PGID match the NAS's `media` system account (uid=1004, gid=100 -
+# the shared `users` group other data on this NAS already uses). UMASK=002
+# keeps newly-created files/dirs group-writable, matching the setgid bit
+# set on this export (chmod g+s, alongside the g+w fix this share needed -
+# see ../../README.md's "Media stack" section).
 #
 # The qbittorrent-vpn SopsSecret (../manifests/secrets/qbittorrent-vpn.yaml)
 # needs real PIA credentials filled in via `sops` before this pod can
@@ -51,8 +58,9 @@ controllers:
           repository: lscr.io/linuxserver/qbittorrent
           tag: latest
         env:
-          PUID: "1000"
-          PGID: "1000"
+          PUID: "1004"
+          PGID: "100"
+          UMASK: "002"
           # Adjust to your local timezone.
           TZ: "Etc/UTC"
           WEBUI_PORT: "8080"
@@ -98,12 +106,12 @@ persistence:
       main:
         qbittorrent:
           - path: /config
-  downloads:
+  torrents:
     enabled: true
     type: nfs
-    server: CHANGEME-nas-ip # e.g. 192.168.80.50
-    path: /CHANGEME-downloads-export
+    server: "192.168.50.105"
+    path: /srv/mergerfs/Pool/Data/torrents
     advancedMounts:
       main:
         qbittorrent:
-          - path: /downloads
+          - path: /torrents

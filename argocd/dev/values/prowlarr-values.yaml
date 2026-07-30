@@ -10,8 +10,8 @@ controllers:
           repository: lscr.io/linuxserver/prowlarr
           tag: latest
         env:
-          PUID: "1000"
-          PGID: "1000"
+          PUID: "1004"
+          PGID: "100"
           # Adjust to your local timezone.
           TZ: "Etc/UTC"
         resources:
