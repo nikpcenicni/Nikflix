@@ -27,15 +27,23 @@ spec:
     # lightweight static/API frontend that shouldn't need anywhere near
     # that on a 6GiB node.
     cheServer:
-      # components.cheServer.clusterRoles (not set here) is for GRANTING
-      # ADDITIONAL ClusterRoles to Che's own shared service account, beyond
-      # the operator's built-in defaults (<namespace>-cheworkspaces-
-      # clusterrole, -cheworkspaces-namespaces-clusterrole,
-      # -cheworkspaces-devworkspace-clusterrole - see the CRD's own field
-      # description) which che-operator already grants automatically and
-      # is what actually lets it provision per-user namespaces/RBAC (see
-      # devEnvironments.user below). No extra value needed here for this
-      # homelab's usage.
+      # components.cheServer.clusterRoles GRANTS ADDITIONAL ClusterRoles to
+      # Che's own shared service account, beyond the operator's built-in
+      # defaults (<namespace>-cheworkspaces-clusterrole,
+      # -cheworkspaces-namespaces-clusterrole,
+      # -cheworkspaces-devworkspace-clusterrole). This WAS left unset on
+      # the assumption those built-in defaults were sufficient - wrong,
+      # confirmed live on first real per-user namespace provisioning:
+      # Kubernetes' own RBAC escalation-prevention rule blocked the `che`
+      # ServiceAccount from creating the che-user-workspace-edit
+      # RoleBinding below with error "attempting to grant RBAC permissions
+      # not currently held" - a ServiceAccount can only bind a ClusterRole
+      # to someone else if it holds every permission in that role itself.
+      # che-user-workspace-edit aggregates the full built-in `edit` role,
+      # which is broader than what the built-in cheworkspaces-* roles
+      # grant `che` itself - so `che` needs `edit` directly too.
+      clusterRoles:
+        - edit
       deployment:
         containers:
           - resources:
