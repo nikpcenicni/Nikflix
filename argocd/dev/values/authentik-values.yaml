@@ -404,13 +404,38 @@ additionalObjects:
               # only a CLI-driven OIDC login flow.
 
           # --- Eclipse Che OAuth2/OIDC provider + application --------------
-          # authentik-side config only, ahead of the CheCluster CR itself
-          # being onboarded as a tracked Application. redirect_uri assumes
-          # Eclipse Che's dashboard OIDC callback path is
-          # /api/oauth/callback under its own hostname - VERIFY this against
-          # the actual CheCluster CR/Ingress once Che is deployed, and update
-          # this redirect_uri (and Che's own OIDC client config) together if
-          # it differs.
+          # che-gateway's oauth-proxy container (unlike ArgoCD/Grafana/
+          # Headlamp's own native OIDC clients) strictly rejects login with
+          # "email in id_token isn't verified" unless the email_verified
+          # claim is explicitly true - confirmed live, first login attempt
+          # failed with exactly this error (oauth-proxy log:
+          # "Error redeeming code during OAuth2 callback: email in id_token
+          # (akadmin@lab.pcenicni.dev) isn't verified"). Authentik's own
+          # built-in "email" scope mapping hardcodes email_verified: False
+          # unconditionally (confirmed via `ak shell` - Authentik has no
+          # per-user email-verification tracking at all, so this can't be
+          # fixed by marking a user "verified"). che-operator's
+          # oauth_proxy.go has no CheCluster CR field to relax this check
+          # either (confirmed against its source - insecure_oidc_skip_
+          # issuer_verification is hardcoded true, but there's no
+          # insecure_oidc_allow_unverified_email equivalent). So this
+          # custom scope mapping overrides email_verified to true, scoped
+          # to Che's provider only - it does NOT touch the shared built-in
+          # "email" mapping ArgoCD/Grafana/Headlamp still use.
+          - model: authentik_providers_oauth2.scopemapping
+            id: scopemapping-che-email-verified
+            identifiers:
+              name: "Eclipse Che: OpenID 'email' (verified)"
+              scope_name: email
+            attrs:
+              name: "Eclipse Che: OpenID 'email' (verified)"
+              scope_name: email
+              description: "Same as the built-in email mapping, but always sets email_verified: true - Authentik has no real email-verification concept, and che-gateway's oauth-proxy hard-rejects login without it."
+              expression: |
+                return {
+                    "email": request.user.email,
+                    "email_verified": True,
+                }
           - model: authentik_providers_oauth2.oauth2provider
             id: provider-che
             identifiers:
@@ -439,7 +464,7 @@ additionalObjects:
               signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
               property_mappings:
                 - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
-                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+                - !KeyOf scopemapping-che-email-verified
                 - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
           - model: authentik_core.application
             id: application-che
