@@ -1,0 +1,49 @@
+# RBAC for the cluster-wide OIDC identity space defined by the
+# AuthenticationConfiguration in development/talos/patches/cp-*.yaml (not
+# yet applied live - see that directory's README). A valid JWT from
+# authentik authenticates successfully today but grants zero permissions
+# until a binding like this exists - see
+# argocd/dev/values/authentik-values.yaml's "Kubernetes human access"
+# blueprint entry for the authentik-side group/provider definition this
+# binding references by name.
+#
+# There used to be a second identity space here, "che" (Eclipse Che
+# dashboard OIDC login), with its own che-devworkspace-user ClusterRole/
+# ClusterRoleBinding. Removed: che-operator v2 on plain (non-OpenShift)
+# Kubernetes does not forward a logged-in user's own OIDC token to the
+# Kubernetes API server (confirmed from che-operator's own source,
+# pkg/deploy/gateway/gateway.go), so that jwt[] entry and this RBAC had no
+# functional consumer - see development/talos/patches/cp-*.yaml's updated
+# comment and argocd/README.md's "Eclipse Che" section for the corrected
+# model (Che's own devEnvironments.user.clusterRoles, in
+# dev/manifests/che-cluster/checluster.yaml, now does this instead).
+
+# --- k8s-human-access: direct human/CLI access -----------------------------
+# claimMappings for this issuer apply an EMPTY prefix to both username (sub)
+# and groups, so the raw authentik group name below is what Kubernetes sees
+# on the token, unmodified. "Kubernetes Admins" is the authentik group
+# created in dev/values/authentik-values.yaml (id: group-kubernetes-admins) -
+# akadmin is its only member today, in this single-admin homelab.
+#
+# Bound to cluster-admin rather than a narrower role: this identity
+# represents the repo owner's own direct CLI access, already equivalent to
+# cluster-admin today via the X.509 admin kubeconfig
+# (development/talos/kubeconfig). This binding is a second, more convenient
+# (browser/PKCE) front door onto the SAME access level for the SAME person,
+# not an expansion of the trust boundary - so cluster-admin matches, rather
+# than exceeds, today's existing exposure. Revisit this if "Kubernetes
+# Admins" ever gains a member who isn't the repo owner - cluster-admin would
+# then need to be reconsidered per-member rather than assumed safe by
+# default.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-human-access-cluster-admin
+subjects:
+  - kind: Group
+    name: "Kubernetes Admins"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

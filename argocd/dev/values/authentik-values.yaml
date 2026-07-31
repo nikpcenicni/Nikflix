@@ -57,6 +57,27 @@ global:
         secretKeyRef:
           name: authentik-oauth-clients
           key: HEADLAMP_OAUTH_CLIENT_SECRET
+    - name: K8S_HUMAN_ACCESS_OAUTH_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: authentik-oauth-clients
+          key: K8S_HUMAN_ACCESS_OAUTH_CLIENT_ID
+    # No K8S_HUMAN_ACCESS_OAUTH_CLIENT_SECRET env var - provider-k8s-human-access
+    # is a public client (see the blueprint entry below), which by definition
+    # has no client_secret. The K8S_HUMAN_ACCESS_OAUTH_CLIENT_SECRET key still
+    # exists in ../manifests/secrets/authentik-oauth-clients.yaml (SOPS
+    # ciphertext, unused) - left in place rather than re-encrypting that file
+    # just to delete an unused key; harmless since nothing reads it anymore.
+    - name: CHE_OAUTH_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: authentik-oauth-clients
+          key: CHE_OAUTH_CLIENT_ID
+    - name: CHE_OAUTH_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: authentik-oauth-clients
+          key: CHE_OAUTH_CLIENT_SECRET
 
 # The remote-cluster service account (Kubernetes source-of-truth outposts)
 # is not used here - authentik only issues OIDC tokens for the apps below.
@@ -176,6 +197,22 @@ additionalObjects:
               name: "Headlamp Admins"
               users:
                 - !Find [authentik_core.user, [username, akadmin]]
+          - model: authentik_core.group
+            id: group-kubernetes-admins
+            identifiers:
+              name: "Kubernetes Admins"
+            attrs:
+              name: "Kubernetes Admins"
+              users:
+                - !Find [authentik_core.user, [username, akadmin]]
+          - model: authentik_core.group
+            id: group-che-users
+            identifiers:
+              name: "Che Users"
+            attrs:
+              name: "Che Users"
+              users:
+                - !Find [authentik_core.user, [username, akadmin]]
 
           # --- Grafana OAuth2/OIDC provider + application -----------------
           - model: authentik_providers_oauth2.oauth2provider
@@ -286,6 +323,152 @@ additionalObjects:
               provider: !KeyOf provider-headlamp
               policy_engine_mode: any
               meta_launch_url: "https://headlamp.lab.pcenicni.dev"
+
+          # --- Kubernetes human access OAuth2/OIDC provider + application -
+          # Not a browser web app - this represents a human running
+          # kubectl/talosctl-style tooling directly against the Kubernetes
+          # API server's OIDC authenticator (an AuthenticationConfiguration
+          # in development/talos/patches/cp-*.yaml - see that directory's
+          # README, out of scope for this GitOps tree). Uses the
+          # authorization_code + PKCE loopback-redirect flow that the
+          # kubectl `oidc-login`/kubelogin credential plugin implements
+          # (opens a browser, then a short-lived local HTTP listener on
+          # 127.0.0.1 catches the callback) - see the redirect_uri note
+          # below.
+          #
+          # client_type is public (not confidential): a CLI credential
+          # plugin distributed to every user's local kubeconfig cannot keep
+          # a client_secret confidential, so per RFC 6749 this must be a
+          # public client, authenticated purely via PKCE
+          # (authorization_code + code_verifier/code_challenge) instead of a
+          # shared secret. There is no separate provider-level "enable PKCE"
+          # field in authentik 2026.5.6's OAuth2Provider model/blueprint
+          # schema - authorize/token support PKCE unconditionally for any
+          # client_type, driven entirely by whether the client sends
+          # code_challenge/code_challenge_method on the authorization
+          # request (see authentik.providers.oauth2.views.authorize and
+          # .views.token in the 2026.5.6 image: client_secret comparison is
+          # skipped whenever client_type == public, and code_verifier is
+          # validated against the stored code_challenge independent of
+          # client_type). authentik's OIDC discovery document
+          # (/.well-known/openid-configuration) unconditionally advertises
+          # code_challenge_methods_supported: [plain, S256] for every
+          # provider (authentik.providers.oauth2.views.provider), and
+          # kubelogin/`kubectl oidc-login` (as of its current docs/usage.md)
+          # auto-detects and uses PKCE from that discovery claim by default
+          # (--oidc-pkce-method=auto) - there is no "--oidc-use-pkce" flag,
+          # and none is needed here. The one thing that DOES need to change
+          # in the kubeconfig exec args for this provider: drop
+          # --oidc-client-secret entirely (a public client has none - do not
+          # pass an empty string either, just omit the flag). client_id is
+          # unaffected by this change (only client_secret goes away), so
+          # development/talos/patches/cp-*.yaml's audiences entry for this
+          # provider does not need to change.
+          - model: authentik_providers_oauth2.oauth2provider
+            id: provider-k8s-human-access
+            identifiers:
+              name: "Kubernetes Human Access"
+            attrs:
+              name: "Kubernetes Human Access"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+              client_type: public
+              grant_types:
+                - authorization_code
+                - refresh_token
+              client_id: !Env K8S_HUMAN_ACCESS_OAUTH_CLIENT_ID
+              include_claims_in_id_token: true
+              # kubelogin's documented default loopback callback. Whatever
+              # OIDC exec plugin config a user writes in their kubeconfig
+              # MUST bind its local callback listener to exactly this
+              # host:port (e.g. kubelogin's --listen-address=localhost:8000)
+              # since matching_mode is strict, not regex.
+              redirect_uris:
+                - url: "http://localhost:8000"
+                  matching_mode: strict
+              signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+              property_mappings:
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+          - model: authentik_core.application
+            id: application-k8s-human-access
+            identifiers:
+              slug: k8s-human-access
+            attrs:
+              name: "Kubernetes Human Access"
+              slug: k8s-human-access
+              provider: !KeyOf provider-k8s-human-access
+              policy_engine_mode: any
+              # No meta_launch_url - this app has no dashboard to launch,
+              # only a CLI-driven OIDC login flow.
+
+          # --- Eclipse Che OAuth2/OIDC provider + application --------------
+          # authentik-side config only, ahead of the CheCluster CR itself
+          # being onboarded as a tracked Application. redirect_uri assumes
+          # Eclipse Che's dashboard OIDC callback path is
+          # /api/oauth/callback under its own hostname - VERIFY this against
+          # the actual CheCluster CR/Ingress once Che is deployed, and update
+          # this redirect_uri (and Che's own OIDC client config) together if
+          # it differs.
+          - model: authentik_providers_oauth2.oauth2provider
+            id: provider-che
+            identifiers:
+              name: "Eclipse Che"
+            attrs:
+              name: "Eclipse Che"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+              client_type: confidential
+              grant_types:
+                - authorization_code
+                - refresh_token
+              client_id: !Env CHE_OAUTH_CLIENT_ID
+              client_secret: !Env CHE_OAUTH_CLIENT_SECRET
+              include_claims_in_id_token: true
+              redirect_uris:
+                - url: "https://che.lab.pcenicni.dev/api/oauth/callback"
+                  matching_mode: strict
+              signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+              property_mappings:
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+          - model: authentik_core.application
+            id: application-che
+            identifiers:
+              slug: che
+            attrs:
+              name: "Eclipse Che"
+              slug: che
+              provider: !KeyOf provider-che
+              policy_engine_mode: any
+              meta_launch_url: "https://che.lab.pcenicni.dev"
+          # Actual access gate for Che: authentik_policies.policybinding lets
+          # a PolicyBindingModel target (here, an Application) bind directly
+          # to a Group (instead of an expression/other Policy object) - a
+          # user must be a member of the bound group to pass, everyone else
+          # is denied at login. This is NOT a pattern copied from
+          # Grafana/ArgoCD/Headlamp above: none of those bind their own
+          # *Admins/*Viewers/*Editors group (or any policy) to their
+          # application, so today they have no login-gate at all - any
+          # authenticated authentik user can open them, and those groups
+          # only exist for RBAC/role-mapping after a successful login. This
+          # is a fresh precedent for gating access itself, applied to Che
+          # only, not a retrofit of the others. With a single binding,
+          # policy_engine_mode any vs all above is equivalent - left as any
+          # to match the sibling applications' field.
+          - model: authentik_policies.policybinding
+            id: policybinding-che-users
+            identifiers:
+              target: !KeyOf application-che
+              group: !KeyOf group-che-users
+            attrs:
+              target: !KeyOf application-che
+              group: !KeyOf group-che-users
+              enabled: true
+              order: 0
+              negate: false
 
           # --- Media stack forward-auth (domain level) --------------------
           # Single Proxy Provider covers every *.lab.pcenicni.dev host via

@@ -1,0 +1,28 @@
+# Raw ClusterRole/ClusterRoleBinding RBAC for the two cluster-wide OIDC
+# identity spaces (k8s-human-access, che) defined by the
+# AuthenticationConfiguration in development/talos/patches/cp-*.yaml -
+# ../manifests/oidc-rbac/. See that manifest's comments for the exact
+# group/claim reasoning. No dependency on another Application - RBAC
+# objects don't need the AuthenticationConfiguration to be live to exist,
+# only to have any effect.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: oidc-rbac
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/oidc-rbac
+  destination:
+    server: https://kubernetes.default.svc
+    # ClusterRole/ClusterRoleBinding are cluster-scoped; namespace here only
+    # matters as a default for any namespaced resource this path might gain
+    # later.
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
