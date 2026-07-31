@@ -1,0 +1,45 @@
+# devworkspace-operator (upstream combined.yaml, v0.41.0 - the exact
+# version che-operator 7.120.0's go.mod requires) - a hard runtime
+# dependency of che-operator discovered live during the eclipse-che
+# rollout: che-operator's manager fails to start several controllers and
+# its CheCluster reconcile permanently fails with "no matches for kind
+# DevWorkspaceOperatorConfig/DevWorkspaceRouting" without these CRDs and
+# this controller already present. The `eclipse-che` Helm chart does NOT
+# install this - it's che-operator itself only.
+#
+# ../manifests/devworkspace-operator/combined.yaml is vendored verbatim
+# from https://raw.githubusercontent.com/devfile/devworkspace-operator/v0.41.0/deploy/deployment/kubernetes/combined.yaml
+# (28k lines: 4 CRDs, ServiceAccount/Role/ClusterRoles/Bindings, 2
+# Services, the controller Deployment, and a cert-manager
+# Certificate/Issuer for its webhook - cert-manager is already live in
+# this cluster, so that dependency is satisfied). It does NOT include a
+# Namespace object - upstream expects `devworkspace-controller` to already
+# exist, hence CreateNamespace=true below.
+#
+# Depends on cert-manager having synced first. eclipse-che/che-cluster
+# depend on this having synced first - no sync-wave is set (this repo
+# relies on selfHeal retries to converge instead, same as
+# cluster-issuers/authentik-outpost elsewhere in this table), which is
+# exactly what happened live: che-operator crash-looped/reconcile-failed
+# for a few minutes until this Application's resources landed, then
+# recovered on its own.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devworkspace-operator
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/devworkspace-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devworkspace-controller
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
