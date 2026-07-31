@@ -427,7 +427,14 @@ additionalObjects:
               client_secret: !Env CHE_OAUTH_CLIENT_SECRET
               include_claims_in_id_token: true
               redirect_uris:
-                - url: "https://che.lab.pcenicni.dev/api/oauth/callback"
+                # Confirmed live from che-gateway's actual oauth-proxy.cfg
+                # (ConfigMap che-gateway-config-oauth-proxy in the
+                # eclipse-che namespace): redirect_url is under
+                # oauth-proxy's own proxy_prefix ("/oauth"), not
+                # che-server's "/api" prefix - the original "/api/oauth/
+                # callback" guess was wrong and caused a live
+                # "Redirect URI Error" on first login attempt.
+                - url: "https://che.lab.pcenicni.dev/oauth/callback"
                   matching_mode: strict
               signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
               property_mappings:
