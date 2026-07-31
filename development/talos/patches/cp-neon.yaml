@@ -1,6 +1,75 @@
 machine:
   install:
     image: ghcr.io/siderolabs/installer:v1.13.7
+  # Cluster-wide OIDC for direct human/CLI access to the Kubernetes API,
+  # trusting this cluster's own authentik as issuer - see
+  # argocd/dev/values/authentik-values.yaml's "Kubernetes human access"
+  # OAuth2Provider/Application blueprint entry for the authentik side of
+  # this. Talos has no first-class AuthenticationConfiguration field as of
+  # this version, so this follows the same file+extraVolume+extraArgs idiom
+  # Talos itself documents for other file-based apiserver flags (e.g.
+  # --audit-policy-file). This same file content is duplicated on all three
+  # control-plane patches (cp-helium/cp-argon/cp-neon) since each node runs
+  # its own kube-apiserver static pod - there is no single cluster-wide
+  # place to put it instead.
+  #
+  # Eclipse Che's dashboard login also uses authentik (see
+  # argocd/dev/manifests/che-cluster/checluster.yaml's spec.networking.auth)
+  # but deliberately does NOT get a jwt[] entry here: che-operator v2 on
+  # plain (non-OpenShift) Kubernetes does not forward a logged-in user's own
+  # OIDC token to the Kubernetes API server - confirmed directly from
+  # che-operator's source (pkg/deploy/gateway/gateway.go: "native user mode
+  # is currently only available on OpenShift"), and the v2 CheCluster CRD
+  # has no equivalent of v1's OpenShift-only nativeUserMode field. A `che`
+  # jwt[] entry previously lived here on the mistaken assumption that it
+  # did; removed as dead config with no functional consumer. Che's actual
+  # per-user isolation model instead runs che-operator/che-server as one
+  # shared privileged service account that provisions per-user namespaces +
+  # RBAC via CheCluster's devEnvironments.user.clusterRoles - see
+  # checluster.yaml and argocd/README.md's "Eclipse Che" section.
+  #
+  # auth.lab.pcenicni.dev's TLS cert comes from the letsencrypt-prod cluster
+  # issuer (see argocd/README.md's ingress-apps entry) - a publicly-trusted
+  # CA already in kube-apiserver's system trust store, so no
+  # issuer.certificateAuthority override is needed here. (The separate
+  # "authentik Self-signed Certificate" referenced in the blueprint only
+  # signs the JWTs themselves, not this TLS endpoint.)
+  files:
+    - path: /var/lib/kube-apiserver/authentication-config.yaml
+      op: create
+      permissions: 0o644
+      content: |
+        apiVersion: apiserver.config.k8s.io/v1beta1
+        kind: AuthenticationConfiguration
+        jwt:
+          # Direct human/CLI OIDC access (kubectl/talosctl-style tooling via
+          # a kubelogin/oidc-login credential plugin) - no username/groups
+          # prefix, so cluster-admin bindings for these identities (a
+          # deliberate follow-up step, not part of this change) can
+          # reference the raw authentik username/groups claims directly.
+          - issuer:
+              url: https://auth.lab.pcenicni.dev/application/o/k8s-human-access/
+              audiences:
+                - "35aabca831b995702a78135ddbbbd05b"
+              audienceMatchPolicy: MatchAny
+            claimMappings:
+              username:
+                claim: "sub"
+                prefix: ""
+              groups:
+                claim: "groups"
+                prefix: ""
+            userValidationRules:
+              - expression: "!user.username.startsWith('system:')"
+                message: "k8s-human-access identities must not use the reserved system: prefix"
+cluster:
+  apiServer:
+    extraArgs:
+      authentication-config: /etc/kubernetes/authentication-config.yaml
+    extraVolumes:
+      - hostPath: /var/lib/kube-apiserver/authentication-config.yaml
+        mountPath: /etc/kubernetes/authentication-config.yaml
+        readonly: true
 ---
 apiVersion: v1alpha1
 kind: HostnameConfig
