@@ -225,21 +225,59 @@ token from that issuer authenticates but grants zero permissions.
   second front door onto that same access level. Revisit this binding if
   `Kubernetes Admins` ever gains a member who is not the repo owner.
 
-A second entry, `che` (Eclipse Che's dashboard OIDC login), existed here
-before, together with a purpose-built `che-devworkspace-user` ClusterRole
-and ClusterRoleBinding. This repository has removed both from
-`oidc-rbac`. che-operator v2 on plain (non-OpenShift) Kubernetes does not
-forward a logged-in user's own OIDC token to the Kubernetes API server
-(confirmed from che-operator's own source, `pkg/deploy/gateway/gateway.go`
-- see [Eclipse Che](#eclipse-che) below). So that `jwt[]` entry and its
-RBAC binding never had a working consumer. Che's dashboard login
-still uses authentik (see [SSO / authentik](#sso--authentik) and [Eclipse
-Che](#eclipse-che)). This login is not wired into this apiserver-level
-`AuthenticationConfiguration` at all, and it must not be. Che's own
-per-user isolation model uses a shared privileged service account that
-provisions per-user namespaces and RBAC instead. The `CheCluster` custom
-resource configures this model directly, through
+A second entry, `che` (Eclipse Che's dashboard OIDC login), also exists
+here. This repository briefly removed it, on the mistaken conclusion
+(from reading only `pkg/deploy/gateway/gateway.go`) that che-operator
+never forwards a user's own OIDC token to the Kubernetes API server on
+plain Kubernetes. That conclusion was wrong, discovered live the first
+time a real login actually reached this code path: che-dashboard's own
+backend (`packages/dashboard-backend/src/routes/api/helpers/getToken.ts`,
+used by every route via
+`kubeConfigProvider.getKubeConfig(getToken(request))`) builds its
+Kubernetes API client straight from the browser's forwarded Authorization
+bearer header, on every platform - the `gateway.go` finding was about a
+narrower, unrelated OpenShift-specific check inside the gateway itself,
+not about the dashboard's own token handling. Removing the `che` entry
+left `che-dashboard` presenting a token the apiserver had no way to
+trust, producing a real `401 Unauthorized` ("Unable to list
+devworkspaces"). The entry's `claimMappings` intentionally differ from
+`k8s-human-access`: `username` maps the `name` claim (not `sub`), with no
+prefix, because che-operator itself provisions per-user RBAC for a
+Kubernetes `User` matching that exact claim unprefixed - confirmed live
+by inspecting the `RoleBinding` che-operator had already created, bound
+to `User "authentik Default Admin"` (Authentik's `name` field for the
+`akadmin` account, not `sub`/`preferred_username`/email). The two
+identity spaces still stay separated - not by username shape, but by
+OIDC audience: a `che`-issued token's audience never matches
+`k8s-human-access`'s expected audience, so it can never be used for that
+tighter path regardless of claim mapping. No `oidc-rbac` ClusterRole/
+ClusterRoleBinding exists for `che` identities - che-operator provisions
+namespace-scoped RoleBindings itself per user, through `CheCluster`'s
 `devEnvironments.user.clusterRoles` - see [Eclipse Che](#eclipse-che).
+
+Both `jwt[]` entries' OIDC discovery depends on `kube-apiserver` being
+able to reach `auth.lab.pcenicni.dev` with a certificate it actually
+trusts - not automatic on this cluster, and worth understanding since it
+failed live twice for two different reasons before working:
+
+- `kube-apiserver`'s static pod runs `hostNetwork: true`, so it uses this
+  Talos node's own DNS resolver, not the cluster's pi-hole split-horizon
+  DNS that pod-network components get through the `coredns` Application.
+  That resolver answers `auth.lab.pcenicni.dev` with a public IP, not
+  Traefik's in-cluster LoadBalancer IP (`192.168.10.240`). Each
+  control-plane patch carries a `StaticHostConfig` document mapping that
+  hostname straight to the LoadBalancer IP, bypassing the resolver
+  entirely for just this one name.
+- That alone was not enough: `StaticHostConfig` only edits the Talos
+  **host's** own `/etc/hosts`, and `hostNetwork: true` only shares the
+  network namespace, not the filesystem - `kube-apiserver`'s own
+  container still has its own separate, kubelet/containerd-generated
+  `/etc/hosts` that never inherits the host's. Each patch also bind-mounts
+  the host's real `/etc/hosts` straight over the container's own, through
+  `cluster.apiServer.extraVolumes` (the same mechanism the
+  `AuthenticationConfiguration` file itself uses) - confirmed there is no
+  `hostAliases` field or equivalent in Talos's own generated static pod
+  manifest to hook into instead.
 
 Group *membership* for `Kubernetes Admins` works the same way as every
 other authentik group in this document - see [Granting app access to
@@ -349,30 +387,34 @@ the matching `CHE_OAUTH_CLIENT_SECRET` value in
 the exact steps.
 
 **Per-user delegation model** (this note resolves the open cross-reference
-flagged earlier in this section): che-operator v2's `CheCluster` CRD has
-no equivalent of the old v1 API's `nativeUserMode` field. A direct check
-against the chart's CRD and che-operator's Go source confirms this. That
-field exists only on `org.eclipse.che/v1`, and its own description says
-it "works only on OpenShift and DevWorkspace engine". che-operator's own
-source (`pkg/deploy/gateway/gateway.go`, lines 218-227 as of version
-7.120.0) confirms the same limit for token forwarding. An explicit
-maintainer comment there states that "native user mode is currently only
-available on OpenShift... Token check will have to work differently on
-Kubernetes". On this plain (non-OpenShift) cluster, che-operator does
-**not** forward a logged-in user's own OIDC token to the Kubernetes API
-server. This repository has removed the `che` `AuthenticationConfiguration`
-`jwt[]` entry and the `che-devworkspace-user` `ClusterRoleBinding` (see
-[Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac) above). Both existed
-only to support that forwarding, and neither ever had a working
-consumer.
+flagged earlier in this section): che-dashboard's backend genuinely does
+forward a logged-in user's own OIDC token straight to the Kubernetes API
+server for per-request calls (confirmed from its actual source, not
+assumed - see [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac) above
+for the full story, including the wrong conclusion this repository
+briefly drew from a narrower, unrelated check in
+`pkg/deploy/gateway/gateway.go`). The `che` `AuthenticationConfiguration`
+`jwt[]` entry on all three control-plane nodes exists specifically so the
+apiserver trusts those forwarded tokens.
 
-Che's actual per-user isolation model on plain Kubernetes is a delegation
-chain instead, per its own ["Configuring cluster roles for
+That per-request token use is layered on top of a separate delegation
+chain che-operator also runs, per its own ["Configuring cluster roles for
 users"](https://eclipse.dev/che/docs/stable/secure/configuring-cluster-roles-for-users/)
-documentation. che-operator and che-server run as one shared privileged
-service account. `components.cheServer.clusterRoles` is unset here;
-che-operator grants its own defaults automatically - see
-`checluster.yaml`'s comment. This service account provisions a per-user
+documentation, for provisioning: che-operator and che-server run as one
+shared privileged service account. `components.cheServer.clusterRoles`
+grants this service account the built-in `edit` ClusterRole directly - not
+left unset, despite an earlier comment here claiming che-operator's own
+defaults were sufficient. That assumption was wrong too, discovered on
+the very first real per-user namespace provisioning attempt: Kubernetes'
+own RBAC escalation-prevention rule blocked `che` from creating the
+`che-user-workspace-edit` RoleBinding below it without holding `edit`
+directly, and then blocked `che-operator` itself from granting `che`
+that role, for the same reason one level up - fixed with a narrowly
+scoped `bind` verb ClusterRole/ClusterRoleBinding for `che-operator` on
+just the `edit` ClusterRole (RBAC's own documented mechanism for an
+operator granting a role broader than what it holds - see
+`checluster.yaml`'s comments for both fixes). This service account
+provisions a per-user
 namespace and a per-user `ServiceAccount`, with RBAC bound through
 `devEnvironments.user.clusterRoles` (see the sizing list above). This
 model does not rely on apiserver-level OIDC trust of the user's own
