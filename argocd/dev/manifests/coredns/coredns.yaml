@@ -14,7 +14,20 @@
 # would otherwise reach the wrong server entirely - see the "SSO / authentik"
 # section of ../../../README.md.
 #
-# The `hosts` plugin below intercepts just these four names before the
+# che.lab.pcenicni.dev was added for the same reason once Eclipse Che came
+# under GitOps (../che-cluster/checluster.yaml) - che-server/dashboard's
+# own OIDC callback validation against authentik happens the same
+# server-to-server way, from inside the che-server pod, and needs
+# auth.lab.pcenicni.dev (already listed below) to resolve correctly; this
+# entry covers the reverse case of anything calling back into Che's own
+# hostname from in-cluster. Per-workspace endpoint hostnames (e.g.
+# <user>-<workspace>-<endpoint>.che.lab.pcenicni.dev - see
+# checluster.yaml's devEnvironments.networking comment) are NOT listed
+# here: they're generated dynamically per workspace, not enumerable ahead
+# of time, and the `hosts` plugin below only matches exact names, not
+# wildcards - out of scope for this static ConfigMap.
+#
+# The `hosts` plugin below intercepts just these five names before the
 # `forward` directive gets them; everything else still goes upstream via
 # `fallthrough`. CoreDNS's `reload` plugin (already in the Corefile) picks up
 # ConfigMap changes automatically, typically within ~30s, without a pod
@@ -47,6 +60,7 @@ data:
             192.168.10.240 argocd.lab.pcenicni.dev
             192.168.10.240 grafana.lab.pcenicni.dev
             192.168.10.240 headlamp.lab.pcenicni.dev
+            192.168.10.240 che.lab.pcenicni.dev
             fallthrough
         }
         forward . /etc/resolv.conf {

@@ -1,0 +1,42 @@
+# Raw manifests - ../manifests/che-cluster/ - the CheCluster v2 custom
+# resource that actually configures the Che instance (che-operator itself
+# is installed separately by the eclipse-che Application, ../eclipse-che.yaml
+# - same two-Application-per-operator split as cert-manager/cluster-issuers).
+#
+# Depends on:
+# - eclipse-che having synced first (needs the CheCluster CRD and the
+#   che-operator controller to exist before this CR means anything -
+#   kubectl apply --dry-run=server against this file will fail with "no
+#   matches for kind" until that CRD is installed, which is expected).
+# - the authentik Application's blueprint having created the "Eclipse Che"
+#   OAuth2 provider/application (dev/values/authentik-values.yaml) and the
+#   authentik-oauth-clients SopsSecret (CHE_OAUTH_CLIENT_ID/SECRET) having
+#   synced - both already exist as of this Application's creation.
+# - the secrets Application having synced the che-oauth-client-secret
+#   SopsSecret (../manifests/secrets/che-oauth-client-secret.yaml) - lives
+#   there, not under ../manifests/che-cluster/, same as every other secret
+#   in this repo. That file still needs a real value + sops --encrypt
+#   filled in by hand before it does anything - see its own header.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: che-cluster
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/che-cluster
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eclipse-che
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Belt-and-suspenders: eclipse-che.yaml's CreateNamespace=true should
+      # already have created this namespace, but this Application's own
+      # manifest (the CheCluster CR) is also namespaced to eclipse-che.
+      - CreateNamespace=true
