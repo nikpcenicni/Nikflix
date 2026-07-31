@@ -13,20 +13,27 @@ machine:
   # its own kube-apiserver static pod - there is no single cluster-wide
   # place to put it instead.
   #
-  # Eclipse Che's dashboard login also uses authentik (see
-  # argocd/dev/manifests/che-cluster/checluster.yaml's spec.networking.auth)
-  # but deliberately does NOT get a jwt[] entry here: che-operator v2 on
-  # plain (non-OpenShift) Kubernetes does not forward a logged-in user's own
-  # OIDC token to the Kubernetes API server - confirmed directly from
-  # che-operator's source (pkg/deploy/gateway/gateway.go: "native user mode
-  # is currently only available on OpenShift"), and the v2 CheCluster CRD
-  # has no equivalent of v1's OpenShift-only nativeUserMode field. A `che`
-  # jwt[] entry previously lived here on the mistaken assumption that it
-  # did; removed as dead config with no functional consumer. Che's actual
-  # per-user isolation model instead runs che-operator/che-server as one
-  # shared privileged service account that provisions per-user namespaces +
-  # RBAC via CheCluster's devEnvironments.user.clusterRoles - see
-  # checluster.yaml and argocd/README.md's "Eclipse Che" section.
+  # Eclipse Che's dashboard also needs a jwt[] entry here - corrected
+  # after getting this wrong once already. `pkg/deploy/gateway/gateway.go`'s
+  # "native user mode is currently only available on OpenShift" is about a
+  # narrower, unrelated check inside the gateway; it says nothing about
+  # che-dashboard's own backend. Confirmed directly from che-dashboard's
+  # actual source (packages/dashboard-backend/src/routes/api/helpers/
+  # getToken.ts + every route handler that calls
+  # `kubeConfigProvider.getKubeConfig(getToken(request))`): che-dashboard
+  # builds its Kubernetes API client straight from the forwarded
+  # Authorization bearer header, on every platform, not just OpenShift -
+  # confirmed live with a real 401 Unauthorized ("Unable to list
+  # devworkspaces") the first time a login actually reached this code path,
+  # right after the `che` entry below had been removed. che-operator
+  # provisions per-user RBAC (the che-user-workspace-edit RoleBinding in
+  # checluster.yaml) for a `User` matching the token's `name` claim
+  # unprefixed (confirmed live - the RoleBinding che-operator already
+  # created was for `User "authentik Default Admin"`, i.e. akadmin's
+  # Authentik `name` field, not `sub`/`preferred_username`/email, and with
+  # no prefix) - claimMappings below matches that convention exactly, not
+  # the k8s-human-access entry's `sub`-based mapping, so the two identity
+  # spaces stay separated by audience rather than by username shape.
   #
   # auth.lab.pcenicni.dev's TLS cert comes from the letsencrypt-prod cluster
   # issuer (see argocd/README.md's ingress-apps entry) - a publicly-trusted
@@ -62,6 +69,23 @@ machine:
             userValidationRules:
               - expression: "!user.username.startsWith('system:')"
                 message: "k8s-human-access identities must not use the reserved system: prefix"
+          # Eclipse Che dashboard - see the comment above for why this
+          # exists and why its claimMappings differ from k8s-human-access.
+          - issuer:
+              url: https://auth.lab.pcenicni.dev/application/o/che/
+              audiences:
+                - "4939f57d5b52e1250340c91a9304c8e3"
+              audienceMatchPolicy: MatchAny
+            claimMappings:
+              username:
+                claim: "name"
+                prefix: ""
+              groups:
+                claim: "groups"
+                prefix: ""
+            userValidationRules:
+              - expression: "!user.username.startsWith('system:')"
+                message: "che identities must not use the reserved system: prefix"
 cluster:
   apiServer:
     extraArgs:
@@ -70,8 +94,44 @@ cluster:
       - hostPath: /var/lib/kube-apiserver/authentication-config.yaml
         mountPath: /etc/kubernetes/authentication-config.yaml
         readonly: true
+      # The StaticHostConfig below only edits the Talos HOST's own
+      # /etc/hosts - confirmed live that this has NO effect inside
+      # kube-apiserver's own container: hostNetwork only shares the
+      # network namespace, not the filesystem, so the container has its
+      # own separate, kubelet/containerd-generated /etc/hosts that never
+      # inherits the host's file. Confirmed via `talosctl get staticpods`
+      # that Talos's generated manifest has no hostAliases field or
+      # /etc/hosts mount of its own to hook into. Bind-mounting the host's
+      # actual /etc/hosts straight over the container's own is the same
+      # extraVolumes mechanism already used for authentication-config.yaml
+      # above, just targeting a path the container already has rather
+      # than a new one - safe here since the host's /etc/hosts already
+      # carries everything a hostNetwork pod needs (localhost, the node's
+      # own hostname) on top of the one real addition.
+      - hostPath: /etc/hosts
+        mountPath: /etc/hosts
+        readonly: true
 ---
 apiVersion: v1alpha1
 kind: HostnameConfig
 auto: "off"
 hostname: talos-dev-cp-helium
+---
+# kube-apiserver's static pod runs hostNetwork: true, so it uses this
+# node's own DNS resolver (confirmed: talosctl get resolvers -> the
+# node's own gateway, not the cluster's pi-hole split-horizon DNS that
+# pod-network components get via the coredns Application). That resolver
+# answers auth.lab.pcenicni.dev with a PUBLIC IP, not Traefik's in-cluster
+# LoadBalancer IP - confirmed live as the actual root cause of the
+# apiserver's OIDC discovery TLS failures ("certificate is valid for
+# <hash>.<hash>.traefik.default, not auth.lab.pcenicni.dev" - that's
+# Traefik's own fallback cert for an SNI hostname it doesn't recognize,
+# meaning the connection was reaching some other Traefik instance
+# entirely at the wrong public IP, not this cluster's). This bypasses
+# the resolver entirely for this one hostname rather than touching the
+# node's broader DNS config.
+apiVersion: v1alpha1
+kind: StaticHostConfig
+name: 192.168.10.240
+hostnames:
+    - auth.lab.pcenicni.dev
