@@ -1,0 +1,166 @@
+# DevWorkspace: an interactive terminal workspace with the Claude Code CLI
+# pre-installed, for use once Eclipse Che is running on the dev cluster.
+# Che itself IS being brought under GitOps by the parallel workstream
+# (argocd/dev/apps/eclipse-che.yaml for che-operator, che-cluster.yaml for
+# the CheCluster CR, both found already-drafted but uncommitted in this
+# working tree as of 2026-07-29) - only this file, the claude-code-workspace
+# image under images/, and the claude-code-oauth-token Secret are deliberately
+# kept out of ArgoCD, for a different reason:
+#
+# NOT wired into ArgoCD / dev/apps. Every Application in dev/apps manages a
+# continuously-reconciled platform component. A DevWorkspace is a
+# per-user-created workspace *instance*, the same category as
+# media-bootstrap's one-shot Job (something you apply/manage by hand when
+# you actually want it, not a resource ArgoCD's prune/selfHeal should own -
+# the DevWorkspace/devworkspace-operator controller mutates its status
+# heavily at runtime, which selfHeal would fight the same way it would a
+# Job). It also matches how Che is normally used: workspaces are created
+# per-user through the Che dashboard/API/CLI, in that user's own
+# auto-provisioned namespace (see the namespace TODO below) - not
+# pre-declared in git ahead of the user's first login. Eclipse Che isn't
+# live yet either way, so the DevWorkspace/DevWorkspaceTemplate CRDs this
+# depends on don't exist on the cluster today - confirmed via
+# `kubectl get crd` on 2026-07-29 - so this can't be dry-run validated
+# against the live cluster until Che is installed.
+#
+# This placement (development/eclipse-che/, hand-applied) mirrors
+# development/talos/'s pattern for dev-cluster tooling that isn't part of the
+# GitOps app-of-apps tree - flagged for your confirmation the same as the
+# Dockerfile/build-workflow choice in
+# images/claude-code-workspace/Dockerfile's header, since there's no existing
+# precedent in this repo for "Che workspace resource" either.
+#
+# apiVersion/kind and the tail -f /dev/null keepalive command match the
+# devworkspace-operator's own samples/plain.yaml
+# (https://github.com/devfile/devworkspace-operator/blob/main/samples/plain.yaml,
+# checked 2026-07-29). workspace.devfile.io/v1alpha2 is still both served and
+# the storage version in devfile/api's current DevWorkspace CRD (only
+# v1alpha1 is marked deprecated there) - not stale.
+#
+# Home directory persistence: NOT a hand-rolled PVC (a prior draft of this
+# file did this, via a pvc.yaml + controller.devfile.io/mount-to-devworkspace
+# automount label mounted at /home/node/.claude - since removed). Instead,
+# this rides entirely on che-operator/devworkspace-operator's own built-in
+# devEnvironments.persistUserHome mechanism, which is already effectively on
+# by CRD default in ../../argocd/dev/manifests/che-cluster/checluster.yaml
+# (persistUserHome.enabled defaults to true, storage.pvcStrategy defaults to
+# per-user - neither is set explicitly in that file, both apply via the
+# CheCluster CRD's own structural-schema defaults) - automatic, no
+# label/attribute needed on this DevWorkspace. The one requirement on this
+# file's side is that the workspace container's home directory be exactly
+# /home/user, which is hardcoded on the devworkspace-operator side (v0.41.0's
+# pkg/constants/constants.go: HomeUserDirectory = "/home/user/") - see
+# images/claude-code-workspace/Dockerfile's own header for the full
+# UID/GID reasoning behind how that image now sets HOME=/home/user via a
+# "user" account instead of node:22-slim's built-in "node" user
+# (HOME=/home/node). With the whole home directory persisted this way,
+# Claude Code's ~/.claude directory and top-level ~/.claude.json (both under
+# code.claude.com/docs/en/claude-directory and
+# code.claude.com/docs/en/devcontainer#persist-authentication-and-settings-across-rebuilds,
+# checked 2026-07-29) survive pod restarts with no CLAUDE_CONFIG_DIR
+# relocation needed - unlike the removed pvc.yaml, which mounted only a
+# narrow /home/node/.claude path and needed that env var to fold
+# ~/.claude.json (normally a $HOME-level file, outside ~/.claude) into it.
+#
+# Prerequisites, in order:
+#   1. Eclipse Che / devworkspace-operator installed and CheCluster live
+#      (eclipse-che.yaml + che-cluster.yaml synced).
+#   2. The target user has logged into the Che dashboard at least once, so
+#      che-operator auto-provisions that user's "<username>-che" namespace
+#      (its default devEnvironments.defaultNamespace.template, per
+#      che-operator 7.120.0's CRD defaults - not overridden in
+#      argocd/dev/manifests/che-cluster/checluster.yaml). This namespace
+#      does not exist before that first login. The same first login is what
+#      makes devEnvironments.persistUserHome's per-user PVC exist too - it's
+#      provisioned lazily, the first time that user's workspace actually
+#      needs it, not at CheCluster-CR-apply time.
+#   3. images/claude-code-workspace built and pushed (see that Dockerfile's
+#      header and ../../.github/workflows/build-claude-code-workspace-image.yml).
+#   4. The claude-code-oauth-token SopsSecret
+#      (../../argocd/dev/manifests/secrets/claude-code-oauth-token.yaml)
+#      filled in with a real token, encrypted with sops, committed, and
+#      synced by the existing `secrets` Application - see that file's
+#      header for the exact remaining steps. Its generated Secret carries a
+#      controller.devfile.io/mount-to-devworkspace automount label (a
+#      different mechanism than home persistence above - this one injects a
+#      Secret's own keys as env vars into every container in the namespace),
+#      so CLAUDE_CODE_OAUTH_TOKEN reaches this container without any
+#      env/secretKeyRef wiring in this file - see the "Auth" note below for
+#      why that's necessary rather than just a style choice.
+#   5. This file's own `namespace` placeholder updated to match the Secret
+#      above.
+#
+# Auth: subscription login via a long-lived OAuth token, not an Anthropic
+# API key. `claude setup-token` (code.claude.com/docs/en/authentication,
+# "Generate a long-lived token", checked 2026-07-31) runs a one-time
+# interactive browser OAuth flow on a human's own already-authenticated
+# machine and prints a token - it can't be run inside this container (no
+# browser here), which is exactly why it's minted out-of-band and injected
+# as CLAUDE_CODE_OAUTH_TOKEN rather than baked into the image. Per the same
+# docs' "Authentication precedence" section, Claude Code reads
+# CLAUDE_CODE_OAUTH_TOKEN as one of its standard non-interactive credential
+# sources (ranked below ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN/apiKeyHelper
+# if any of those also happen to be set, but above falling back to an
+# interactive /login prompt) - so as long as ANTHROPIC_API_KEY stays unset
+# in this container, Claude Code authenticates with this token with no
+# approval prompt, in both interactive and non-interactive use. The token
+# is scoped to inference only (it can't open Remote Control sessions) and
+# is valid for ONE YEAR from mint time - see the SopsSecret file's header
+# for the renewal TODO. Bare mode (`--bare`) does NOT read this variable,
+# but this workspace runs Claude Code normally, not in bare mode.
+#
+# Devfile v2's native container.env only accepts literal {name, value}
+# pairs - no valueFrom/secretKeyRef (checked against the current devfile
+# JSON Schema) - and the devworkspace-operator's container-overrides
+# attribute explicitly refuses to override `env` (see
+# docs/additional-configuration.adoc's "Container overrides" section,
+# checked 2026-07-29). Neither can source CLAUDE_CODE_OAUTH_TOKEN from a
+# Secret directly, hence prerequisite 4 above: the Secret's own
+# controller.devfile.io/mount-to-devworkspace label with
+# controller.devfile.io/mount-as: env is the documented way to inject a
+# Secret's keys as env vars into every container in the namespace, and it's
+# also why that Secret's key must be named CLAUDE_CODE_OAUTH_TOKEN exactly
+# (the mechanism uses the Secret's own keys as the resulting env var names
+# verbatim, and that's also the exact spelling Claude Code itself reads).
+kind: DevWorkspace
+apiVersion: workspace.devfile.io/v1alpha2
+metadata:
+  name: claude-code-workspace
+  # TODO: match the claude-code-oauth-token Secret's namespace once the target
+  # user's "<username>-che" namespace exists - see that Secret's TODO.
+  namespace: REPLACE-ME-username-che
+spec:
+  started: true
+  routingClass: basic
+  template:
+    components:
+      - name: claude-code
+        container:
+          # TODO: replace with a pinned tag (e.g. the git-sha tag the build
+          # workflow also pushes) once the image has been built at least
+          # once - `latest` is a placeholder until then.
+          image: ghcr.io/nikpcenicni/claude-code-workspace:latest
+          command:
+            - tail
+            - "-f"
+            - /dev/null
+          # No project to clone into this workspace today, so skip the
+          # operator's default /projects source mount rather than pull in
+          # its own (separate, common-strategy) storage PVC for nothing.
+          # Add a `projects:` block above and set this true if you want a
+          # repo checked out automatically.
+          mountSources: false
+          # Kept within argocd/dev/manifests/che-cluster/checluster.yaml's
+          # devEnvironments.containerResourceCaps (request 200m/512Mi, limit
+          # 1 cpu/2Gi) - che-operator caps any component that asks for more
+          # down to that ceiling anyway, so matching it here just makes the
+          # real allocation visible instead of implicit.
+          cpuRequest: 200m
+          cpuLimit: "1"
+          memoryRequest: 512Mi
+          memoryLimit: 2Gi
+          # CLAUDE_CODE_OAUTH_TOKEN and the persisted-home volume mount
+          # deliberately do NOT appear here - see this file's top-of-file
+          # "Auth" and "Home directory persistence" comments for why they
+          # can't/don't need to, and prerequisite 4 for where
+          # CLAUDE_CODE_OAUTH_TOKEN actually comes from.

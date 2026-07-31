@@ -28,6 +28,7 @@ argocd/
 │   │   ├── authentik.yaml
 │   │   ├── bazarr.yaml
 │   │   ├── cert-manager.yaml
+│   │   ├── eclipse-che.yaml
 │   │   ├── external-dns.yaml
 │   │   ├── headlamp.yaml
 │   │   ├── jellyseerr.yaml
@@ -44,12 +45,14 @@ argocd/
 │   │   ├── argocd.yaml
 │   │   ├── argocd-config.yaml
 │   │   ├── authentik-outpost.yaml
+│   │   ├── che-cluster.yaml
 │   │   ├── cluster-issuers.yaml
 │   │   ├── coredns.yaml
 │   │   ├── ingress-apps.yaml
 │   │   ├── media-bootstrap.yaml
 │   │   ├── media-forward-auth.yaml
 │   │   ├── metallb-pool.yaml
+│   │   ├── oidc-rbac.yaml
 │   │   └── secrets.yaml
 │   ├── values/
 │   │   ├── alloy-values.yaml
@@ -73,12 +76,14 @@ argocd/
 │       ├── argocd/              # vendored copy of ArgoCD's own install manifest
 │       ├── argocd-config/
 │       ├── authentik-outpost/
+│       ├── che-cluster/
 │       ├── cluster-issuers/
 │       ├── coredns/
 │       ├── ingress-apps/
 │       ├── media-bootstrap/
 │       ├── media-forward-auth/
 │       ├── metallb-pool/
+│       ├── oidc-rbac/
 │       └── secrets/            # SOPS-encrypted SopsSecret resources - see "Secrets management" below
 └── prod/                      # Applications specific to the production cluster (empty scaffold)
     ├── apps/
@@ -110,10 +115,10 @@ groups:
   ArgoCD calls this a
   [multi-source Application](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/).
 - **Raw-manifest Applications** (`argocd`, `argocd-config`,
-  `authentik-outpost`, `cluster-issuers`, `coredns`, `ingress-apps`,
-  `media-bootstrap`, `media-forward-auth`, `metallb-pool`, `secrets` in
-  `dev/`) each use one source: a directory of plain Kubernetes manifests
-  under that cluster's `manifests/`.
+  `authentik-outpost`, `che-cluster`, `cluster-issuers`, `coredns`,
+  `ingress-apps`, `media-bootstrap`, `media-forward-auth`, `metallb-pool`,
+  `oidc-rbac`, `secrets` in `dev/`) each use one source: a directory of
+  plain Kubernetes manifests under that cluster's `manifests/`.
 
 ## Applications (dev)
 
@@ -123,6 +128,7 @@ groups:
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). Depends on `sops-secrets-operator` and `secrets` having synced first. |
 | `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
+| `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
 | `external-dns` | Helm chart `external-dns` from the official external-dns chart repository, values in `dev/values/external-dns-values.yaml` | `external-dns` | Watches Ingress resources cluster-wide and auto-creates/updates matching `*.lab.pcenicni.dev` records in pi-hole's custom DNS list - see [DNS / external-dns](#dns--external-dns). Depends on `sops-secrets-operator` and `secrets` having synced first. |
 | `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). Not yet SSO-wired - see [SSO / authentik](#sso--authentik). |
 | `jellyseerr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/jellyseerr-values.yaml` | `media` | User-facing request portal - approved requests get forwarded to Sonarr/Radarr. See [Media stack](#media-stack). |
@@ -139,13 +145,15 @@ groups:
 | `argocd` | Raw manifests (vendored upstream install manifest) in `dev/manifests/argocd/` | `argocd` | The rest of ArgoCD's own install, beyond what `argocd-config` manages - CRDs, controllers, RBAC. ArgoCD managing itself - see [Applications brought under GitOps](#applications-brought-under-gitops). |
 | `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm`, `argocd-rbac-cm`, and `argocd-cmd-params-cm` ConfigMaps that ArgoCD's own install created. Wires up OIDC login against authentik, maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles, and keeps `argocd-server` running in `--insecure` mode since Traefik terminates TLS. |
 | `authentik-outpost` | Raw manifests in `dev/manifests/authentik-outpost/` | `authentik` | Deployment/Service for the media stack's authentik proxy outpost - see [SSO: authentik forward-auth](#sso-authentik-forward-auth-domain-level). Not authentik-managed (no service-connection configured), so tracked like any other by-hand Deployment. Depends on the `authentik` Application's blueprint and the `authentik-outpost-media-token` SopsSecret. |
+| `che-cluster` | Raw manifests in `dev/manifests/che-cluster/` | `eclipse-che` | The `CheCluster` v2 custom resource that configures the actual Eclipse Che instance (dashboard at `che.lab.pcenicni.dev`) - see [Eclipse Che](#eclipse-che). Depends on `eclipse-che` (the operator/CRD), `authentik`'s blueprint (the "Eclipse Che" OAuth2 provider/application), and `secrets`' `che-oauth-client-secret` SopsSecret having synced first. |
 | `cluster-issuers` | Raw manifests in `dev/manifests/cluster-issuers/` | `cert-manager` | cert-manager `ClusterIssuer` resources. The manifests define a Let's Encrypt staging issuer and a Let's Encrypt production issuer, both through a Cloudflare DNS-01 challenge for the `pcenicni.dev` zone. |
-| `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve the four `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
+| `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve five `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
 | `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
 | `media-bootstrap` | Raw manifests in `dev/manifests/media-bootstrap/` | `media` | One-shot Job wiring Prowlarr/Sonarr/Radarr/Bazarr together via their REST APIs - see [Media stack](#media-stack)'s "First-time setup" section. Not automated-sync - sync it by hand when needed. |
 | `media-forward-auth` | Raw manifests in `dev/manifests/media-forward-auth/` | `media` | Traefik `Middleware` for the media stack's authentik SSO - see [SSO: authentik forward-auth](#sso-authentik-forward-auth-domain-level). Depends on `authentik-outpost` having synced first. |
 | `metallb-pool` | Raw manifests in `dev/manifests/metallb-pool/` | `metallb-system` | MetalLB `IPAddressPool` and `L2Advertisement` resources. These resources give MetalLB the address range `192.168.10.240`–`192.168.10.245` to assign to `LoadBalancer` services. |
-| `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, and ArgoCD's OIDC/database credentials, and pi-hole's API password - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
+| `oidc-rbac` | Raw manifests in `dev/manifests/oidc-rbac/` | `default` (all resources are cluster-scoped) | `ClusterRoleBinding` granting Kubernetes RBAC to the cluster-wide `k8s-human-access` OIDC identity space from the (not-yet-applied) Talos `AuthenticationConfiguration` - see [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac). |
+| `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, ArgoCD's OIDC/database credentials, pi-hole's API password, and Eclipse Che's OAuth2 client secret (`che-oauth-client-secret` - not yet filled in, see [Eclipse Che](#eclipse-che)) - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
 
 Every Application above uses automated sync with `prune: true` and
 `selfHeal: true`. This setting means ArgoCD applies matching changes
@@ -192,6 +200,187 @@ onboarded as a tracked Application at all - see "Applications not yet
 onboarded" below). Until both of those happen, Headlamp keeps working the
 same way it does today (in-cluster service account), unaffected by
 authentik's presence.
+
+## Cluster-wide OIDC / RBAC
+
+`development/talos/patches/cp-{helium,argon,neon}.yaml` defines a Talos
+`AuthenticationConfiguration` for this cluster. This configuration is not
+live on the cluster yet. It has one JSON Web Token (JWT) authenticator
+entry that trusts this cluster's own authentik as the issuer - see the
+comments in those patch files, and the "Kubernetes human access" blueprint
+entry in `dev/values/authentik-values.yaml`, for the authentik-side
+OAuth2Provider/Application config. `oidc-rbac` (raw manifests in
+`dev/manifests/oidc-rbac/`) is the RBAC half. Without `oidc-rbac`, a valid
+token from that issuer authenticates but grants zero permissions.
+
+- **`k8s-human-access`** - direct human and CLI `kubectl` access (public
+  client with Proof Key for Code Exchange (PKCE), kubelogin-style). The
+  `sub`/`groups` claims carry no prefix, so the authentik group
+  `Kubernetes Admins` becomes the literal Kubernetes group
+  `Kubernetes Admins`. This entry binds to `cluster-admin`. This binding
+  gives the repo owner no new access. The repo owner already has
+  `cluster-admin`-equivalent access today, through the X.509 admin
+  kubeconfig (`development/talos/kubeconfig`). This binding is only a
+  second front door onto that same access level. Revisit this binding if
+  `Kubernetes Admins` ever gains a member who is not the repo owner.
+
+A second entry, `che` (Eclipse Che's dashboard OIDC login), existed here
+before, together with a purpose-built `che-devworkspace-user` ClusterRole
+and ClusterRoleBinding. This repository has removed both from
+`oidc-rbac`. che-operator v2 on plain (non-OpenShift) Kubernetes does not
+forward a logged-in user's own OIDC token to the Kubernetes API server
+(confirmed from che-operator's own source, `pkg/deploy/gateway/gateway.go`
+- see [Eclipse Che](#eclipse-che) below). So that `jwt[]` entry and its
+RBAC binding never had a working consumer. Che's dashboard login
+still uses authentik (see [SSO / authentik](#sso--authentik) and [Eclipse
+Che](#eclipse-che)). This login is not wired into this apiserver-level
+`AuthenticationConfiguration` at all, and it must not be. Che's own
+per-user isolation model uses a shared privileged service account that
+provisions per-user namespaces and RBAC instead. The `CheCluster` custom
+resource configures this model directly, through
+`devEnvironments.user.clusterRoles` - see [Eclipse Che](#eclipse-che).
+
+Group *membership* for `Kubernetes Admins` works the same way as every
+other authentik group in this document - see [Granting app access to
+other users](#granting-app-access-to-other-users).
+
+## Eclipse Che
+
+Two Applications, split the same way as cert-manager and
+cluster-issuers - one Application for the operator, one for the custom
+resource:
+
+- **`eclipse-che`** - the che-operator chart (Custom Resource Definitions
+  (CRDs) and the controller only). Single-source, not the usual
+  two-source Helm-chart shape: this chart's `values.yaml` is empty, and
+  nothing in it is templated - see that Application's own comment for
+  details. Depends on `cert-manager` having synced first. The chart's own
+  `che-operator-selfsigned-issuer`/`che-operator-serving-cert` pair (an
+  `Issuer` and a `Certificate` for the operator's own admission and
+  conversion webhook) needs cert-manager's CRDs and controller to already
+  exist.
+- **`che-cluster`** - the `CheCluster` v2 custom resource
+  (`dev/manifests/che-cluster/checluster.yaml`) that configures the Che
+  instance, at `che.lab.pcenicni.dev`. Depends on `eclipse-che` having
+  synced first, for the `CheCluster` CRD itself. It also depends on
+  `authentik`'s blueprint (the "Eclipse Che" OAuth2 provider/application -
+  see [SSO / authentik](#sso--authentik)) and on `secrets`'
+  `che-oauth-client-secret` SopsSecret having synced first, for the OIDC
+  config below to work.
+
+Sized for this cluster's 6GiB-per-node capacity, rather than upstream's
+stock example values:
+
+- `components.cheServer`/`components.dashboard` pin explicit, conservative
+  resource requests and limits, instead of the operator's own defaults
+  (see `checluster.yaml`'s comments for the exact numbers and where they
+  came from). `components.pluginRegistry.openVSXURL` and
+  `components.devfileRegistry.disableInternalRegistry` point at the public
+  upstream registries. This setup replaces an embedded OpenVSX registry, a
+  Postgres database, and an internal devfile-registry pod - upstream's own
+  recommended lightweight config, and a meaningful resource saving here.
+- `devEnvironments.defaultContainerResources` and `.containerResourceCaps`
+  bind every *workspace* container (not the platform components above) to
+  a 512Mi/200m request and a 2Gi/1cpu limit. This is much lower than the
+  512Mi-request/6Gi-limit range some upstream examples use. Adjust these
+  values once a real workspace has run and its true resource footprint is
+  known.
+- `devEnvironments.storage.perUserStrategyPvcConfig.storageClass` sets
+  `local-path` explicitly. `local-path` is this cluster's only
+  StorageClass.
+- `devEnvironments.user.clusterRoles` grants `che-user-workspace-edit` to
+  each Che-provisioned user's own per-user-namespace `ServiceAccount`.
+  `che-user-workspace-edit` is a `ClusterRole` defined as a second
+  document in `checluster.yaml`. It aggregates the built-in `edit`
+  ClusterRole's rule set, through the standard
+  `rbac.authorization.k8s.io/aggregate-to-edit: "true"` selector.
+  che-operator creates the binding automatically, as a namespace-scoped
+  `RoleBinding` - not `cluster-admin` or `admin`. A workspace terminal
+  that runs arbitrary devfile-supplied tooling does not need
+  cluster-scoped or RBAC-escalation permissions to manage ordinary
+  objects in its own namespace. See [Cluster-wide OIDC /
+  RBAC](#cluster-wide-oidc--rbac) above, and the "Per-user delegation
+  model" note below, for why this replaced the apiserver-OIDC approach
+  staged there originally.
+
+**Networking**: che-operator creates its **own** `Ingress` objects,
+derived from `spec.networking.domain`, `hostname`, `annotations`, and
+`ingressClassName`. This differs from every other app in this repository,
+which gets a hand-written `Ingress` in `ingress-apps.yaml`. che-operator's
+own `pkg/deploy/ingress.go` confirms this behavior directly; the CRD field
+names alone do not confirm it. So `ingress-apps.yaml` has no
+`che-cluster` entry. Instead, `checluster.yaml` sets
+`ingressClassName: traefik` and
+`cert-manager.io/cluster-issuer: letsencrypt-prod` directly. This gives
+the same result the hand-written Ingresses in `ingress-apps.yaml` get.
+`external-dns` already watches Ingress resources cluster-wide (see [DNS /
+external-dns](#dns--external-dns) below), so it picks up whatever Ingress
+che-operator creates, with no extra config. `coredns` now has a fifth
+`che.lab.pcenicni.dev` entry, for the same in-cluster-callback reason as
+the other four - see that Application's manifest.
+
+Per-workspace endpoints get their own subdomain under
+`spec.networking.domain` (for example,
+`<user>-<workspace>-<endpoint>.che.lab.pcenicni.dev`). This cluster has no
+wildcard certificate for that subdomain pattern. `checluster.yaml` enables
+`devEnvironments.networking.externalTLSConfig`, with the same
+`cert-manager.io/cluster-issuer` annotation. So cert-manager issues a real
+per-workspace certificate through the DNS-01 challenge instead. Expect a
+delay of roughly one to five minutes before a new workspace's endpoints
+are reachable over TLS for the first time. Watch Let's Encrypt's rate
+limits if users create many workspaces in a short time window. A wildcard
+certificate for `*.che.lab.pcenicni.dev` removes this kind of delay. This
+repository does not add one now, to avoid introducing that machinery
+speculatively. Revisit this decision if the delay becomes a problem in
+practice.
+
+**Still needs a real value from a human before login works**:
+`spec.networking.auth.oAuthClientName` in `checluster.yaml` is an empty
+placeholder. The CheCluster v2 CRD has no secret-reference mechanism for
+this field (unlike `oAuthSecret`, which has one). So this field must hold
+the literal OIDC client_id string, the same way `argocd-config.yaml`'s
+`clientID` and `kube-prometheus-stack-values.yaml`'s `client_id` are
+literal. Enter the same value here as `CHE_OAUTH_CLIENT_ID` in
+`dev/manifests/secrets/authentik-oauth-clients.yaml`. Separately, enter
+the matching `CHE_OAUTH_CLIENT_SECRET` value in
+`dev/manifests/secrets/che-oauth-client-secret.yaml`, and run
+`sops --encrypt --in-place` on that file. See that file's own header for
+the exact steps.
+
+**Per-user delegation model** (this note resolves the open cross-reference
+flagged earlier in this section): che-operator v2's `CheCluster` CRD has
+no equivalent of the old v1 API's `nativeUserMode` field. A direct check
+against the chart's CRD and che-operator's Go source confirms this. That
+field exists only on `org.eclipse.che/v1`, and its own description says
+it "works only on OpenShift and DevWorkspace engine". che-operator's own
+source (`pkg/deploy/gateway/gateway.go`, lines 218-227 as of version
+7.120.0) confirms the same limit for token forwarding. An explicit
+maintainer comment there states that "native user mode is currently only
+available on OpenShift... Token check will have to work differently on
+Kubernetes". On this plain (non-OpenShift) cluster, che-operator does
+**not** forward a logged-in user's own OIDC token to the Kubernetes API
+server. This repository has removed the `che` `AuthenticationConfiguration`
+`jwt[]` entry and the `che-devworkspace-user` `ClusterRoleBinding` (see
+[Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac) above). Both existed
+only to support that forwarding, and neither ever had a working
+consumer.
+
+Che's actual per-user isolation model on plain Kubernetes is a delegation
+chain instead, per its own ["Configuring cluster roles for
+users"](https://eclipse.dev/che/docs/stable/secure/configuring-cluster-roles-for-users/)
+documentation. che-operator and che-server run as one shared privileged
+service account. `components.cheServer.clusterRoles` is unset here;
+che-operator grants its own defaults automatically - see
+`checluster.yaml`'s comment. This service account provisions a per-user
+namespace and a per-user `ServiceAccount`, with RBAC bound through
+`devEnvironments.user.clusterRoles` (see the sizing list above). This
+model does not rely on apiserver-level OIDC trust of the user's own
+token. authentik's "Eclipse Che" OAuth2Provider is unaffected by any of
+this. It only ever authenticates the Che *dashboard* login, a normal
+`authorization_code` browser flow to `/api/oauth/callback`, which
+che-server itself validates. This provider is never a source of
+apiserver-trusted tokens, and nothing in its blueprint config
+(`dev/values/authentik-values.yaml`) assumes otherwise.
 
 ## DNS / external-dns
 

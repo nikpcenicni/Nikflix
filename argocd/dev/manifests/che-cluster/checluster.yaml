@@ -1,0 +1,247 @@
+# The CheCluster v2 custom resource - actual configuration for the Eclipse
+# Che instance. che-operator itself (CRDs + controller) is installed
+# separately by the eclipse-che Application (../../apps/eclipse-che.yaml).
+#
+# Schema reference: this file was written against che-operator 7.120.0's
+# CheCluster v2 CRD (org.eclipse.che/v2), read directly from the chart's
+# crds/checlusters.org.eclipse.che.CustomResourceDefinition.yaml and cross
+# -checked against che-operator's own Go source
+# (pkg/deploy/server/basedomain_reconciler.go, pkg/deploy/ingress.go,
+# controllers/devworkspace/solver/) for how spec.networking.domain/hostname
+# and spec.devEnvironments.networking.externalTLSConfig actually behave -
+# not guessed from the field names alone.
+apiVersion: org.eclipse.che/v2
+kind: CheCluster
+metadata:
+  name: eclipse-che
+  namespace: eclipse-che
+spec:
+  components:
+    # cheServer/dashboard: explicit, conservative overrides instead of
+    # relying on the operator's own built-in defaults (cheServer defaults
+    # to 512Mi/100m request, 1Gi/1cpu limit; dashboard defaults to 32Mi/100m
+    # request, 1Gi/500m limit as of 7.120.0 - see
+    # pkg/common/constants/constants.go in che-operator's source). Pinning
+    # these explicitly keeps them stable across chart upgrades and caps
+    # dashboard's memory limit down from the stock 1Gi, since it's a
+    # lightweight static/API frontend that shouldn't need anywhere near
+    # that on a 6GiB node.
+    cheServer:
+      # components.cheServer.clusterRoles (not set here) is for GRANTING
+      # ADDITIONAL ClusterRoles to Che's own shared service account, beyond
+      # the operator's built-in defaults (<namespace>-cheworkspaces-
+      # clusterrole, -cheworkspaces-namespaces-clusterrole,
+      # -cheworkspaces-devworkspace-clusterrole - see the CRD's own field
+      # description) which che-operator already grants automatically and
+      # is what actually lets it provision per-user namespaces/RBAC (see
+      # devEnvironments.user below). No extra value needed here for this
+      # homelab's usage.
+      deployment:
+        containers:
+          - resources:
+              request:
+                cpu: 100m
+                memory: 512Mi
+              limits:
+                cpu: 500m
+                memory: 1Gi
+    dashboard:
+      deployment:
+        containers:
+          - resources:
+              request:
+                cpu: 50m
+                memory: 32Mi
+              limits:
+                cpu: 300m
+                memory: 256Mi
+    # Avoids running the embedded OpenVSX registry + its own Postgres
+    # database (openvsx-server/openvsx-database - 512Mi+256Mi request,
+    # 2Gi+1Gi limit combined per che-operator's constants.go) and the
+    # internal devfile-registry pod, in favor of the public upstream
+    # registries - this is upstream's own recommended lightweight config
+    # (see che-operator's config/samples/org_v2_checluster.yaml), and a
+    # meaningful save on a 6GiB-per-node cluster.
+    pluginRegistry:
+      openVSXURL: "https://open-vsx.org"
+    devfileRegistry:
+      disableInternalRegistry: true
+      externalDevfileRegistries:
+        - url: "https://registry.devfile.io"
+    # che-gateway's own resources are NOT configurable via this CR (checked
+    # the v2 CRD schema - networking.auth.gateway only exposes
+    # configLabels, no deployment/resources sub-schema) - it always runs at
+    # the operator's built-in default (256Mi/500m limit, 64Mi/50m request).
+  devEnvironments:
+    # Applies to workspace containers that don't specify their own
+    # resources. Actual pod usage = this, plus the running editor's own
+    # overhead (varies by editor - see this field's description in the
+    # CRD) - so a workspace's real footprint will run somewhat higher than
+    # these numbers alone.
+    defaultContainerResources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    # Caps workspace containers that DO specify their own resources (e.g.
+    # the default universal-developer-image devfile component) down to the
+    # same ceiling, so no single devfile component can request more than
+    # the platform components above leave room for on a 6GiB node.
+    containerResourceCaps:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: "1"
+        memory: 2Gi
+    # Che's native per-user delegation model on plain (non-OpenShift)
+    # Kubernetes: che-operator/che-server run as one shared privileged
+    # service account (spec.components.cheServer - see below) and
+    # provision a per-user namespace + per-user ServiceAccount for each
+    # authenticated user, rather than forwarding that user's own OIDC
+    # token to the Kubernetes API server (which che-operator v2 does not
+    # do outside OpenShift - see argocd/README.md's "Eclipse Che" section
+    # for the full finding, and the now-removed `che` entry this replaces
+    # in development/talos/patches/cp-*.yaml's AuthenticationConfiguration
+    # / dev/manifests/oidc-rbac/oidc-rbac.yaml). `clusterRoles` here lists
+    # additional ClusterRoles (beyond che-operator's own per-user-namespace
+    # defaults) granted, via a namespace-scoped RoleBinding che-operator
+    # creates automatically, to that per-user ServiceAccount within its
+    # OWN per-user namespace only - not a cluster-wide grant.
+    #
+    # che-user-workspace-edit (defined below in this file) mirrors the
+    # built-in `edit` ClusterRole via aggregation, rather than
+    # `cluster-admin`/`admin`: this is a single-admin homelab, so there's
+    # no other tenant to isolate from, but a workspace terminal running
+    # arbitrary devfile-supplied tooling still shouldn't casually get
+    # cluster-scoped or RBAC-escalation permissions (only `admin` and
+    # above include those) just to let the one real user manage ordinary
+    # objects (Pods, Deployments, Services, ConfigMaps, Secrets, etc) in
+    # their own workspace namespace - `edit` is Kubernetes' own documented
+    # role for exactly that. Per Che's "Configuring cluster roles for
+    # users" docs (eclipse.dev/che/docs/stable/secure/
+    # configuring-cluster-roles-for-users/), any ClusterRole referenced
+    # here must carry the app.kubernetes.io/part-of=che.eclipse.org label
+    # (enforced by che-operator, not just documentation) - see that
+    # ClusterRole's own labels below.
+    user:
+      clusterRoles:
+        - che-user-workspace-edit
+    storage:
+      # pvcStrategy defaults to per-user already (one PVC per user, shared
+      # across that user's workspaces) - only the storage class needs
+      # setting, since local-path is the only StorageClass this cluster
+      # has (WaitForFirstConsumer, non-replicated - see argocd/README.md's
+      # "Media stack" storage section for why Longhorn isn't in use yet).
+      perUserStrategyPvcConfig:
+        storageClass: local-path
+    networking:
+      # Per-workspace endpoint Ingresses get their own subdomain under
+      # networking.domain below (e.g.
+      # <user>-<workspace>-<endpoint>.che.lab.pcenicni.dev - see
+      # controllers/devworkspace/solver/endpoint_strategy.go in
+      # che-operator's source), which this cluster has no wildcard
+      # certificate for. externalTLSConfig.enabled: true tells che-operator
+      # not to set (or revert) TLS config on these workspace Ingresses
+      # itself, so cert-manager's own ingress-shim can act on the
+      # annotation below instead - the same cert-manager.io/cluster-issuer
+      # pattern every other Ingress in this repo uses (see
+      # ../ingress-apps/ingress-apps.yaml), just applied per-workspace
+      # instead of by hand.
+      #
+      # CAVEAT: this means every new workspace start triggers a fresh
+      # Let's Encrypt DNS-01 challenge (via the Cloudflare solver in
+      # ../cluster-issuers/cluster-issuers.yaml) for that workspace's
+      # unique subdomain - expect roughly a 1-5 minute delay before a
+      # workspace's endpoints are reachable over TLS the first time, and
+      # keep an eye on Let's Encrypt's rate limits if many workspaces get
+      # created in a short window. A wildcard certificate for
+      # *.che.lab.pcenicni.dev, referenced instead of per-Ingress
+      # annotations, would remove this delay - worth revisiting if it
+      # becomes annoying in practice, not done here to avoid introducing
+      # that extra machinery speculatively.
+      externalTLSConfig:
+        enabled: true
+        annotations:
+          cert-manager.io/cluster-issuer: letsencrypt-prod
+  networking:
+    # Domain is required on Kubernetes (no default - see
+    # pkg/deploy/server/basedomain_reconciler.go) and doubles as the base
+    # domain for the per-workspace subdomains above. hostname is set
+    # explicitly (equal to domain) so the dashboard/gateway's own Ingress
+    # lands at exactly che.lab.pcenicni.dev instead of falling back to
+    # domain's bare value - which happens to be the same string here, but
+    # spelling it out avoids relying on that fallback behavior.
+    domain: che.lab.pcenicni.dev
+    hostname: che.lab.pcenicni.dev
+    ingressClassName: traefik
+    # Replaces (not merges with) che-operator's own nginx-flavored default
+    # annotations (kubernetes.io/ingress.class: nginx, proxy timeouts,
+    # etc - irrelevant on Traefik anyway) - see pkg/deploy/ingress.go.
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Required for cert-manager's ingress-shim to actually issue anything:
+    # che-operator sets this literal string as the Ingress's
+    # tls[].secretName with no fallback if left empty (see
+    # pkg/deploy/ingress.go) - same explicit-secretName pattern every
+    # Ingress in ../ingress-apps/ingress-apps.yaml already uses.
+    tlsSecretName: che-tls
+    auth:
+      # authentik's issuer URL for the "Eclipse Che" application (slug
+      # "che" - see dev/values/authentik-values.yaml's application-che
+      # entry), same /application/o/<slug>/ pattern argocd-config.yaml
+      # uses for ArgoCD's own OIDC issuer. che-operator discovers the
+      # authorize/token/userinfo endpoints from this issuer's
+      # .well-known/openid-configuration - no separate URL fields needed.
+      identityProviderURL: "https://auth.lab.pcenicni.dev/application/o/che/"
+      # This field has no secret-reference mechanism in the CheCluster v2
+      # CRD (unlike oAuthSecret below) - it's the literal OIDC client_id
+      # string, the same way dev/manifests/argocd-config/argocd-config.yaml's
+      # clientID and dev/values/kube-prometheus-stack-values.yaml's
+      # client_id are literal (client IDs aren't secret-shaped the way
+      # client secrets are). Filled with the same value as
+      # CHE_OAUTH_CLIENT_ID in ../secrets/authentik-oauth-clients.yaml.
+      oAuthClientName: "4939f57d5b52e1250340c91a9304c8e3"
+      # Name of a plain Kubernetes Secret in this namespace (eclipse-che)
+      # holding the client secret under its own `oAuthSecret` key, labeled
+      # app.kubernetes.io/part-of=che.eclipse.org - see
+      # ../secrets/che-oauth-client-secret.yaml (SopsSecret lives alongside
+      # every other secret in this repo, not in this directory - see that
+      # file's own header for why). This field DOES support that
+      # indirection (per the CRD's own field description), unlike
+      # oAuthClientName above.
+      oAuthSecret: che-oauth-client-secret
+  containerRegistry: {}
+  gitServices: {}
+---
+# Referenced by spec.devEnvironments.user.clusterRoles above. che-operator
+# creates a namespace-scoped RoleBinding (to this ClusterRole) in each
+# auto-provisioned per-user namespace - this is NOT a ClusterRoleBinding
+# and grants nothing cluster-wide by itself.
+#
+# aggregationRule mirrors the built-in `edit` ClusterRole's ruleset by
+# selecting the same rbac.authorization.k8s.io/aggregate-to-edit: "true"
+# label Kubernetes' own bootstrap RBAC controller uses to build `edit` -
+# rather than hardcoding a duplicate rule list that could drift from the
+# cluster's actual `edit` definition across Kubernetes versions. The
+# aggregation controller populates `rules` automatically; this manifest
+# intentionally has none of its own.
+#
+# The app.kubernetes.io/part-of=che.eclipse.org label is required:
+# che-operator only allows ClusterRoles carrying this label to be
+# referenced from devEnvironments.user.clusterRoles / components.cheServer.
+# clusterRoles (enforced by the operator itself, not just documented
+# convention) - see https://eclipse.dev/che/docs/stable/secure/configuring-cluster-roles-for-users/.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: che-user-workspace-edit
+  labels:
+    app.kubernetes.io/part-of: che.eclipse.org
+aggregationRule:
+  clusterRoleSelectors:
+    - matchLabels:
+        rbac.authorization.k8s.io/aggregate-to-edit: "true"
+rules: []

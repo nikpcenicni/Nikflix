@@ -1,0 +1,44 @@
+# Eclipse Che operator + CRDs. Chart `eclipse-che` version 7.120.0 installs
+# che-operator, the CheCluster CRD, and its own cert-manager Issuer/
+# Certificate (che-operator-selfsigned-issuer / che-operator-serving-cert -
+# used for the operator's conversion/admission webhook serving cert) - this
+# Application therefore needs the cert-manager Application synced first
+# (for the Issuer/Certificate CRDs and controller), same dependency shape as
+# cluster-issuers.yaml.
+#
+# Single-source, not the usual two-source Helm-chart shape (see
+# ../../README.md's "Applications (dev)" intro) - this chart's values.yaml
+# is empty and no template references .Values at all (verified against the
+# chart's Git source, eclipse-che/che-operator's helmcharts/), so there is
+# nothing to put in a matching dev/values/eclipse-che-values.yaml file. All
+# real configuration lives in the CheCluster CR instead - see the
+# che-cluster Application (../manifests/che-cluster/).
+#
+# Every template in this chart hardcodes namespace: eclipse-che (not
+# templated from Release.Namespace), so destination.namespace below just
+# has to match that, and CreateNamespace=true is required since the chart
+# defines no Namespace object of its own.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: eclipse-che
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://eclipse-che.github.io/che-operator/charts
+    chart: eclipse-che
+    targetRevision: 7.120.0
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: eclipse-che
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # The CheCluster CRD this chart installs is ~22.7k lines - the same
+      # last-applied-configuration 262144-byte annotation risk as
+      # kube-prometheus-stack/cert-manager/metallb/traefik.
+      - ServerSideApply=true
