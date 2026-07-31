@@ -252,4 +252,49 @@ aggregationRule:
   clusterRoleSelectors:
     - matchLabels:
         rbac.authorization.k8s.io/aggregate-to-edit: "true"
-rules: []
+---
+# Two-layer RBAC escalation-prevention chain, both confirmed live on the
+# first real per-user namespace provisioning attempt (not guessed):
+#
+# 1. `che` ServiceAccount tried to create the che-user-workspace-edit
+#    RoleBinding above in the new per-user namespace -> blocked, because
+#    Kubernetes only lets a principal grant a ClusterRole to someone else
+#    if it holds every permission in that role itself, and `che`'s
+#    built-in cheworkspaces-* ClusterRoles don't cover everything the
+#    aggregated `edit` role does. Fixed by adding `edit` directly to
+#    spec.components.cheServer.clusterRoles above - `che` now holds it.
+# 2. That fix then hit the SAME rule one level up: `che-operator`'s own
+#    ServiceAccount (which is what actually creates `che`'s
+#    ClusterRoleBindings) doesn't hold `edit`'s full permission set
+#    either, so IT couldn't grant `edit` to `che`.
+#
+# The idiomatic Kubernetes answer to "an operator needs to grant a role
+# broader than what it holds" is the `bind` verb - RBAC's own explicit
+# escape hatch, documented at
+# https://kubernetes.io/docs/reference/access-authn-authz/rbac/#restrictions-on-role-creation-or-update:
+# a principal with `bind` on a specific (Cluster)Role can create bindings
+# to it without needing the role's own permissions itself. Scoped
+# narrowly to just the `edit` ClusterRole by resourceNames - che-operator
+# gains nothing else from this.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: che-operator-bind-edit
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterroles"]
+    verbs: ["bind"]
+    resourceNames: ["edit"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: che-operator-bind-edit
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: che-operator-bind-edit
+subjects:
+  - kind: ServiceAccount
+    name: che-operator
+    namespace: eclipse-che
