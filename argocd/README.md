@@ -48,7 +48,6 @@ argocd/
 │   │   ├── cluster-issuers.yaml
 │   │   ├── coredns.yaml
 │   │   ├── ingress-apps.yaml
-│   │   ├── media-bootstrap.yaml
 │   │   ├── media-forward-auth.yaml
 │   │   ├── metallb-pool.yaml
 │   │   ├── oidc-rbac.yaml
@@ -78,7 +77,6 @@ argocd/
 │       ├── cluster-issuers/
 │       ├── coredns/
 │       ├── ingress-apps/
-│       ├── media-bootstrap/
 │       ├── media-forward-auth/
 │       ├── metallb-pool/
 │       ├── oidc-rbac/
@@ -114,7 +112,7 @@ groups:
   [multi-source Application](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/).
 - **Raw-manifest Applications** (`argocd`, `argocd-config`,
   `authentik-outpost`, `che-cluster`, `cluster-issuers`, `coredns`,
-  `ingress-apps`, `media-bootstrap`, `media-forward-auth`, `metallb-pool`,
+  `ingress-apps`, `media-forward-auth`, `metallb-pool`,
   `oidc-rbac`, `secrets` in `dev/`) each use one source: a directory of
   plain Kubernetes manifests under that cluster's `manifests/`.
 
@@ -147,7 +145,6 @@ groups:
 | `coredns` | Raw manifests in `dev/manifests/coredns/` | `kube-system` | Patches the `coredns` ConfigMap Talos's own bootstrap installed, so pods resolve five `*.lab.pcenicni.dev` hostnames to Traefik's in-cluster IP directly instead of falling through to public DNS - see [SSO / authentik](#sso--authentik). |
 | `devworkspace-operator` | Raw manifest (vendored upstream `combined.yaml`, v0.41.0) in `dev/manifests/devworkspace-operator/` | `devworkspace-controller` | CRDs and controller that che-operator hard-requires at runtime - discovered live during the Eclipse Che rollout when che-operator's manager and its `CheCluster` reconcile both failed with "no matches for kind DevWorkspaceOperatorConfig/DevWorkspaceRouting" without it. The `eclipse-che` Helm chart does not install this itself. Depends on `cert-manager` having synced first (its webhook's Certificate/Issuer). `eclipse-che` and `che-cluster` depend on this having synced first - no sync-wave is set, so che-operator crash-loops/reconcile-fails for a few minutes until this lands, then recovers on its own (same selfHeal-driven convergence as `cluster-issuers`/`authentik-outpost` elsewhere in this table). |
 | `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
-| `media-bootstrap` | Raw manifests in `dev/manifests/media-bootstrap/` | `media` | One-shot Job wiring Prowlarr/Sonarr/Radarr/Bazarr together via their REST APIs - see [Media stack](#media-stack)'s "First-time setup" section. Not automated-sync - sync it by hand when needed. |
 | `media-forward-auth` | Raw manifests in `dev/manifests/media-forward-auth/` | `media` | Traefik `Middleware` for the media stack's authentik SSO - see [SSO: authentik forward-auth](#sso-authentik-forward-auth-domain-level). Depends on `authentik-outpost` having synced first. |
 | `metallb-pool` | Raw manifests in `dev/manifests/metallb-pool/` | `metallb-system` | MetalLB `IPAddressPool` and `L2Advertisement` resources. These resources give MetalLB the address range `192.168.10.240`–`192.168.10.245` to assign to `LoadBalancer` services. |
 | `oidc-rbac` | Raw manifests in `dev/manifests/oidc-rbac/` | `default` (all resources are cluster-scoped) | `ClusterRoleBinding` granting Kubernetes RBAC to the cluster-wide `k8s-human-access` OIDC identity space from the Talos `AuthenticationConfiguration` (live on all three control-plane nodes) - see [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac). |
@@ -545,64 +542,41 @@ swarm traffic exposes an IP address to peers; SABnzbd's Usenet traffic
 doesn't. See
 [media-stack.md's Components table](../docs/architecture/media-stack.md#components).
 
-### First-time setup: automated for everything except Jellyseerr
+### First-time setup: all manual, through each app's web UI
 
 None of these apps have a declarative bootstrap mechanism the way
-authentik's blueprint ConfigMap does, so `media-bootstrap` (raw manifests
-in `dev/manifests/media-bootstrap/`) wires them together via their own
-REST APIs instead of clicking through each web UI by hand:
+authentik's blueprint ConfigMap does (see [SSO /
+authentik](#sso--authentik)). This repository once shipped a
+`media-bootstrap` Job that wired the apps together through their own REST
+APIs. That Job did not work well, so this repository removed it.
+Configure each app by hand, once, through its own web UI, after the
+app's Application is healthy:
 
-- **Sonarr** - root folder set to `/media/tv`; native login disabled (see
-  below).
-- **Radarr** - root folder set to `/media/movies`; native login disabled.
-- **Prowlarr** - Sonarr and Radarr added as Applications; qBittorrent and
-  SABnzbd added as download clients.
-- **Bazarr** - connected to both Sonarr and Radarr.
+- **Sonarr** - set the root folder to `/media/tv`.
+- **Radarr** - set the root folder to `/media/movies`.
+- **Prowlarr** - add Sonarr and Radarr as Applications. Add qBittorrent
+  and SABnzbd as Download Clients. Point each entry at the target app's
+  in-cluster Service address: `sonarr.media.svc.cluster.local:8989`,
+  `radarr.media.svc.cluster.local:7878`,
+  `qbittorrent.media.svc.cluster.local:8080`, and
+  `sabnzbd.media.svc.cluster.local:8080`.
+- **Bazarr** - connect Bazarr to Sonarr and Radarr, through Bazarr's own
+  Settings page.
+- **Jellyseerr** - connect Jellyseerr to Sonarr and Radarr, and to
+  Jellyfin on the Mac Mini (point it at the SMB library share).
+  Jellyseerr's first-run flow needs an interactive admin account (Plex
+  OAuth or a local user), so a scripted bootstrap could never cover this
+  app.
 
-Sonarr and Radarr each also have their own native login (a mandatory
-"create an account" prompt on first UI access) that's entirely separate
-from - and unaware of - authentik's forward-auth already in front of
-them. The bootstrap Job sets both apps' `authenticationRequired` to
-`disabledForLocalAddresses` via `PUT /api/v3/config/host/1`, which
-bypasses their own auth for any private-range source IP - covering all
-in-cluster traffic, including from Traefik, since this cluster's
-pod/service CIDRs are themselves private ranges. authentik stays the one
-real gatekeeper.
-
-This Application is **not** automated-sync - Jobs are immutable after
-creation, so ArgoCD's usual prune/selfHeal would fight with a Job that
-already ran. Sync it by hand once (ArgoCD UI "Sync" button, or
-`argocd app sync media-bootstrap`) after the apps above are healthy; every
-step checks for the thing it's about to create first, so re-syncing later
-is safe. It reads each app's API key/password from the
-`media-bootstrap-api-keys` SopsSecret - these are the apps' own
-auto-generated credentials (LinuxServer.io *arr images and Bazarr
-generate an API key on first boot; qBittorrent has no API key, only a
-WebUI password, so its temporary auto-generated one was reset to a real
-value via qBittorrent's own API rather than kept as the plaintext value
-it logs on first boot), read from the already-running pods once, not set
-by this repo. If an app's PVC is ever wiped and it generates new
-credentials, re-derive and update that Secret before re-syncing this Job.
-
-**Jellyseerr is deliberately not wired up here.** Its first-run flow
-needs interactive admin-account creation (Plex OAuth or a local user),
-which doesn't fit a scripted, API-key-based bootstrap. Connect it by
-hand, once: **Jellyseerr** - connect to Sonarr and Radarr, and to
-Jellyfin on the Mac Mini (point it at the SMB library share).
-
-Two non-obvious bugs surfaced while building the Prowlarr/Bazarr calls -
-see the comments in `dev/manifests/media-bootstrap/media-bootstrap.yaml`
-for the details, and [[nikflix_media_stack_nas]] memory for the full
-debugging trail:
-- Prowlarr 2.5.2's download-client validation throws an unhandled
-  `NullReferenceException` (surfaced as an opaque "Test was aborted due
-  to an error") if the top-level `categories` field is omitted, even as
-  an empty array - found by reading Prowlarr's own container logs for the
-  real .NET stack trace, not from the API's own error response.
-- Bazarr's settings API never casts string form values to `bool` before
-  its dynaconf validator checks them - use dynaconf's `@bool` cast-prefix
-  syntax (`@bool true`/`@bool false`) on those specific fields instead of
-  a plain `true`/`false` string.
+Sonarr and Radarr each also show their own native login prompt (a
+mandatory "create an account" step) on first UI access. This login is
+separate from - and unaware of - authentik's forward-auth, which already
+sits in front of both apps (see [SSO: authentik
+forward-auth](#sso-authentik-forward-auth-domain-level)). Each app's own
+General settings page has an Authentication Required option. Disable it,
+or leave the default value. This choice is optional and manual.
+authentik's forward-auth still gates access at the Ingress level either
+way.
 
 ### SSO: authentik forward-auth (domain level)
 
