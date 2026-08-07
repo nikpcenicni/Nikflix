@@ -29,7 +29,6 @@ argocd/
 │   │   ├── bazarr.yaml
 │   │   ├── cert-manager.yaml
 │   │   ├── eclipse-che.yaml
-│   │   ├── external-dns.yaml
 │   │   ├── headlamp.yaml
 │   │   ├── jellyseerr.yaml
 │   │   ├── kube-prometheus-stack.yaml
@@ -59,7 +58,6 @@ argocd/
 │   │   ├── authentik-values.yaml
 │   │   ├── bazarr-values.yaml
 │   │   ├── cert-manager-values.yaml
-│   │   ├── external-dns-values.yaml
 │   │   ├── headlamp-values.yaml
 │   │   ├── jellyseerr-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
@@ -108,7 +106,7 @@ between clusters — see [shared/README.md](shared/README.md). Populate
 The child Applications in each cluster's `apps/` split into two
 groups:
 
-- **Helm-chart Applications** (`alloy`, `authentik`, `external-dns`,
+- **Helm-chart Applications** (`alloy`, `authentik`,
   `kube-prometheus-stack`, `loki`, `sops-secrets-operator` in `dev/`) each
   use two sources: a Helm chart from an upstream chart repository, and this
   git repository for the matching values file in that cluster's `values/`.
@@ -129,7 +127,6 @@ groups:
 | `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
-| `external-dns` | Helm chart `external-dns` from the official external-dns chart repository, values in `dev/values/external-dns-values.yaml` | `external-dns` | Watches Ingress resources cluster-wide and auto-creates/updates matching `*.lab.pcenicni.dev` records in pi-hole's custom DNS list - see [DNS / external-dns](#dns--external-dns). Depends on `sops-secrets-operator` and `secrets` having synced first. |
 | `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). Not yet SSO-wired - see [SSO / authentik](#sso--authentik). |
 | `jellyseerr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/jellyseerr-values.yaml` | `media` | User-facing request portal - approved requests get forwarded to Sonarr/Radarr. See [Media stack](#media-stack). |
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
@@ -352,11 +349,12 @@ names alone do not confirm it. So `ingress-apps.yaml` has no
 `ingressClassName: traefik` and
 `cert-manager.io/cluster-issuer: letsencrypt-prod` directly. This gives
 the same result the hand-written Ingresses in `ingress-apps.yaml` get.
-`external-dns` already watches Ingress resources cluster-wide (see [DNS /
-external-dns](#dns--external-dns) below), so it picks up whatever Ingress
-che-operator creates, with no extra config. `coredns` now has a fifth
-`che.lab.pcenicni.dev` entry, for the same in-cluster-callback reason as
-the other four - see that Application's manifest.
+A pi-hole wildcard DNS entry covers whatever hostname che-operator's
+Ingress ends up using, including per-workspace subdomains, with no
+per-host config at all - see [DNS / external-dns](#dns--external-dns)
+below. `coredns` now has a fifth `che.lab.pcenicni.dev` entry, for the
+same in-cluster-callback reason as the other four - see that
+Application's manifest.
 
 Per-workspace endpoints get their own subdomain under
 `spec.networking.domain` (for example,
@@ -428,33 +426,44 @@ apiserver-trusted tokens, and nothing in its blueprint config
 ## DNS / external-dns
 
 `coredns` (above) makes hostnames resolve correctly *from inside* the
-cluster. `external-dns` handles the other direction: it watches every
-Ingress resource cluster-wide and keeps pi-hole's custom DNS list in sync,
-so a LAN client (a browser, `curl`, another machine) gets a working record
-for a new `*.lab.pcenicni.dev` hostname without anyone adding it to pi-hole
-by hand - which is how `auth.lab.pcenicni.dev` almost didn't work the first
-time authentik was added (see [Configuring the authentik admin
-account](#configuring-the-authentik-admin-account) - that was fixed by hand
-before external-dns existed).
+cluster. LAN clients (a browser, `curl`, another machine) get the other
+direction - a working record for `*.lab.pcenicni.dev` - from a wildcard
+DNS entry on pi-hole (`192.168.1.127`), not from this repo:
+`misc.dnsmasq_lines` on that pi-hole carries
+`address=/.lab.pcenicni.dev/192.168.10.240` (Traefik's in-cluster
+LoadBalancer IP), added directly through pi-hole's own v6 REST API. This
+matches at any subdomain depth (dnsmasq's `address=/domain/ip` is a
+suffix match, not the single-label match a standard DNS `*.domain`
+wildcard would give), which is what lets Eclipse Che's dynamic
+per-workspace hostnames (`<workspace>.che.lab.pcenicni.dev`, and
+deeper) resolve with no extra automation at all - see [Eclipse
+Che](#eclipse-che).
 
-Only one pi-hole exists today (`192.168.1.127` - see
-`dev/values/external-dns-values.yaml`), even though the network has three
-(see the root [README.md](../README.md)'s port mapping table). When the
-other two join a synced pi-hole setup, update `pihole-server` to whichever
-one becomes the source of truth - external-dns only writes to one target at
-a time, so the sync mechanism between pi-holes (not this repo) is what
-propagates records to the rest.
+Every other `lab.pcenicni.dev` name already in pi-hole's plain "Local DNS
+Records" list (the rest of the home lab - NAS, other VMs, the separate
+`noble` cluster, non-Kubernetes services) still resolves to its own
+explicit IP, unaffected: dnsmasq always prefers an exact record over a
+wildcard match, confirmed live before relying on it. The real tradeoff,
+accepted deliberately: a typo'd or not-yet-registered
+`*.lab.pcenicni.dev` host now silently resolves to this dev cluster's
+Traefik instead of failing with a clean NXDOMAIN.
 
-`policy: upsert-only` is deliberate, not a default left alone: this pi-hole
-already has many hand-managed custom DNS entries for the rest of the home
-lab (NAS, other VMs, non-Kubernetes services). external-dns only ever
-creates or updates records for hosts it currently sees on a
-`lab.pcenicni.dev` Ingress (`domainFilters`) - it never deletes anything,
-even a stale record for an Ingress that's since been removed. Clean those up
-by hand in pi-hole if that ever matters; the alternative (`policy: sync`)
-risks deleting hand-managed records pi-hole has no way to tell apart from
-ones external-dns created, since pi-hole's DNS API has no per-record
-ownership tracking to begin with (`registry: noop`).
+**`external-dns` (the Helm-chart Application that used to automate the
+per-Ingress-host side of this) has been removed, temporarily.** It
+watched every Ingress cluster-wide and wrote a matching individual
+record to pi-hole's `hosts` list for each one - fully superseded now by
+the wildcard above for anything reachable only on the LAN. The plan
+going forward is a split between internal-only apps (covered by the
+wildcard, same as today) and a small set of externally-exposed apps
+(starting with authentik, meant to be reachable from outside the LAN
+under `auth.pcenicni.dev` and, with dual tenancy, `auth.nikflix.ca`) -
+`external-dns` (or an equivalent) is expected to come back scoped to
+just that second, smaller set once that work is actually planned out.
+Until then, nothing in this repo manages individual pi-hole records -
+the wildcard is the whole story. The removed Application's old
+`policy: upsert-only`/`registry: noop` reasoning (this pi-hole has many
+hand-managed entries with no per-record ownership tracking to safely
+diff against) still applies whenever it comes back.
 
 ## Media stack
 
@@ -807,12 +816,6 @@ management](#secrets-management)).
 
 NOTE: The `metallb-pool` Application needs the `metallb` Application synced
 first, for MetalLB's CRDs and controller.
-
-NOTE: `dev/values/external-dns-values.yaml` hardcodes pi-hole's current IP
-(`192.168.1.127`) as `pihole-server`, and needs "Permit destructive actions
-via API" reachable/working on that pi-hole for record writes to succeed
-(see [DNS / external-dns](#dns--external-dns)). If the pi-hole this points
-at is ever replaced or re-IP'd, update `pihole-server` to match.
 
 ## Applications brought under GitOps
 
