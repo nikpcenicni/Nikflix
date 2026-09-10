@@ -20,6 +20,15 @@
 # The qbittorrent-vpn SopsSecret (../manifests/secrets/qbittorrent-vpn.yaml)
 # needs real PIA credentials filled in via `sops` before this pod can
 # actually reach the internet - see ../../README.md's "Media stack" section.
+# Enrolled in Ballast's full measure+apply+resize lifecycle (see
+# ../apps/ballast.yaml) - a media-stack convenience app, not cluster-critical
+# infra, so safe to let Ballast rightsize live. Two containers share this
+# pod (gluetun + qbittorrent) - Ballast measures/resizes each independently,
+# no special handling needed for that.
+defaultPodOptions:
+  labels:
+    ballast.tightlinesoftware.com/mode: resize
+
 controllers:
   main:
     containers:
