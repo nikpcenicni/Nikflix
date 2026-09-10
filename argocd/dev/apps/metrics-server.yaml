@@ -1,0 +1,30 @@
+# metrics-server - Kubernetes Metrics API (kubectl top, HPA, and Ballast's
+# kubernetesMetrics MetricsSource - see ballast.yaml). No dependency on
+# cert-manager or any other Application here; it's a standalone metrics
+# pipeline. ballast.yaml depends on this having synced first.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://kubernetes-sigs.github.io/metrics-server/
+      chart: metrics-server
+      targetRevision: 3.14.0
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/metrics-server-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

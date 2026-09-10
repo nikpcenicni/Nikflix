@@ -1,0 +1,24 @@
+# metrics-server - values for the official metrics-server Helm chart. See
+# ../apps/metrics-server.yaml. Provides the Kubernetes Metrics API
+# (`kubectl top nodes`/`kubectl top pods`, and CPU/memory usage data for
+# Ballast's kubernetesMetrics MetricsSource - see ../apps/ballast.yaml).
+#
+# No --kubelet-insecure-tls or hostNetwork override is set here, on the
+# assumption that Talos's kubelet serving certificates (signed by the
+# cluster's own CA) validate cleanly against the chart's default kubelet args
+# (--kubelet-preferred-address-types=InternalIP,...). This was validated with
+# `helm template` and `kubectl apply --dry-run=server` only, not a real
+# deploy - confirm with `kubectl top nodes`/`kubectl top pods -A` once this
+# Application actually syncs, and add --kubelet-insecure-tls only if that
+# check fails with a TLS/x509 error (don't add it preemptively).
+#
+# Resources trimmed down from the chart's own defaults (100m/200Mi request, no
+# limit), matching this repo's dev-cluster convention of scaling requests/
+# limits down for these VMs - see the comment at the top of
+# kube-prometheus-stack-values.yaml.
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 128Mi
