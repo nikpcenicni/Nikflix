@@ -1,0 +1,70 @@
+# ServiceMonitor resources for ArgoCD's three metrics Services, created by
+# the vendored ../argocd/install.yaml but never scraped by kube-prometheus-stack's
+# Prometheus without one of these. Needed for the community "ArgoCD" Grafana
+# dashboard (ID 14584) to show any data - it reads argocd_* metrics that
+# Prometheus never collected without these.
+#
+# Each selector matches the target Service's own labels (not the underlying
+# pod's), since a ServiceMonitor selects a Service and Prometheus Operator
+# resolves that Service's endpoints itself. The `release: kube-prometheus-stack`
+# label is required - this cluster's Prometheus only watches ServiceMonitors
+# carrying that label (see its serviceMonitorSelector).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd-metrics
+  namespace: argocd
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - argocd
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-metrics
+      app.kubernetes.io/part-of: argocd
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd-server-metrics
+  namespace: argocd
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - argocd
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-server-metrics
+      app.kubernetes.io/part-of: argocd
+  endpoints:
+    - port: metrics
+      interval: 30s
+---
+# Port confirmed live: `kubectl get svc -n argocd
+# argocd-notifications-controller-metrics -o yaml` shows a single named port
+# `metrics` on 9001.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd-notifications-controller-metrics
+  namespace: argocd
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - argocd
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-notifications-controller-metrics
+      app.kubernetes.io/part-of: argocd
+  endpoints:
+    - port: metrics
+      interval: 30s
