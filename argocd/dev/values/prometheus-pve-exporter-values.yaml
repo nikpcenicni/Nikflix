@@ -53,10 +53,23 @@ persistence:
 # plain /metrics endpoint: Prometheus has to hit /pve?target=<proxmox-host>
 # on the exporter's own Service, then relabel the scraped series so
 # `instance` reads as the actual Proxmox host (192.168.10.10), not the
-# exporter pod's own address. This is the exporter's own documented
-# Prometheus relabeling recipe, translated into this chart's native
-# serviceMonitor block (app-template 5.0.1 supports emitting a ServiceMonitor
-# directly - no separate raw manifest needed).
+# exporter pod's own address.
+#
+# This is NOT the textbook blackbox_exporter relabeling recipe (that recipe
+# copies __address__ into __param_target first) - that step is wrong here
+# and was a bug in an earlier version of this file, confirmed live: it
+# clobbered the target query param with the exporter pod's own address
+# (scrape URL ended up as .../pve?target=10.244.x.x%3A9221 instead of
+# .../pve?target=192.168.10.10), and the exporter 500'd trying to probe
+# itself. Root cause: blackbox_exporter's static_configs targets list *is*
+# the set of URLs to probe, so __address__ starts out as the real target -
+# but a ServiceMonitor's __address__ always starts as the exporter's own
+# Service/Pod endpoint, discovered via Kubernetes SD. Prometheus already
+# auto-derives __param_target from the `params` block below before
+# relabeling runs, so it's correct as-is - copying __address__ over it only
+# destroys that. Two relabelings, not three: capture the already-correct
+# __param_target into `instance`, then point __address__ at the exporter's
+# real Service so the HTTP request actually goes there.
 #
 # `release: kube-prometheus-stack` is required - this cluster's Prometheus
 # only watches ServiceMonitors carrying that exact label (same convention as
@@ -74,8 +87,6 @@ serviceMonitor:
         params:
           target: ["192.168.10.10"]
         relabelings:
-          - sourceLabels: ["__address__"]
-            targetLabel: __param_target
           - sourceLabels: ["__param_target"]
             targetLabel: instance
           - targetLabel: __address__
