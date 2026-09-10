@@ -48,12 +48,23 @@ alloy:
           url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
         }
       }
+  # Bumped from 64Mi request/128Mi limit: confirmed live via `kubectl top pods`
+  # that every healthy replica already runs at 104-146Mi (cAdvisor's working-set
+  # figure, which can read above the hard cgroup limit without triggering OOM
+  # on its own) - already at the edge of the old limit cluster-wide, not a
+  # one-node fluke. The one replica that was actually crashing
+  # (talos-dev-worker-argon, SIGSEGV/exit 139, instantly on every start, zero
+  # log output) got no closer to a root cause after a fresh `talosctl image
+  # pull` on that node ruled out simple local image-cache corruption - this
+  # heftier ceiling is the next thing to try before spending more effort
+  # chasing a single-node segfault that may just be a Go runtime/cgroup memory
+  # accounting edge case at the old limit's margin.
   resources:
     requests:
       cpu: 50m
-      memory: 64Mi
-    limits:
       memory: 128Mi
+    limits:
+      memory: 256Mi
 
 controller:
   type: daemonset
