@@ -1,0 +1,28 @@
+# ballast - values for the ballast Helm chart (OCI, ghcr.io/tight-line/charts/
+# ballast). See ../apps/ballast.yaml. Installs the operator, its CRDs
+# (WorkloadProfile, ClusterResourcePolicy/ResourcePolicy, MetricsSource,
+# BallastConfig), and its admission webhook only - nothing here enrolls any
+# existing workload. Ballast only measures/resizes a pod once it carries the
+# ballast.tightlinesoftware.com/mode label, which is a deliberate per-workload
+# decision left to a human, not to this Application.
+#
+# Everything below is the chart's own default (homogeneous-large-fleet
+# preset, the built-in default in the chart's values.yaml - see
+# charts/ballast/presets/README.md upstream). No override needed for a small,
+# mixed dev fleet: operator resources default to a 10m/64Mi request and a
+# 500m/128Mi/256Mi-ephemeral-storage limit, and the bundled Valkey instance
+# defaults to a 50m/96Mi request with a 96Mi memory limit and a 192Mi PVC -
+# already modest for this cluster's ~2950m/~5.3Gi-per-node capacity, so this
+# repo doesn't trim further.
+#
+# certManager.enabled (default true) has the chart create its own self-signed
+# Issuer/Certificate for the admission webhook's serving certificate -
+# cert-manager (see ../apps/cert-manager.yaml) must already be running for
+# this to work. ballast.yaml documents this dependency.
+valkey:
+  # local-path is this cluster's only/default StorageClass (same as
+  # kube-prometheus-stack-values.yaml's storageSpec and
+  # checluster.yaml's perUserStrategyPvcConfig) - set explicitly rather than
+  # relying on the chart's empty-string "use cluster default" fallback.
+  dataStorage:
+    className: local-path

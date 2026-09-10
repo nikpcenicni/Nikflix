@@ -26,6 +26,7 @@ argocd/
 │   ├── apps/
 │   │   ├── alloy.yaml
 │   │   ├── authentik.yaml
+│   │   ├── ballast.yaml
 │   │   ├── bazarr.yaml
 │   │   ├── cert-manager.yaml
 │   │   ├── eclipse-che.yaml
@@ -34,6 +35,7 @@ argocd/
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
 │   │   ├── metallb.yaml
+│   │   ├── metrics-server.yaml
 │   │   ├── prometheus-pve-exporter.yaml
 │   │   ├── prowlarr.yaml
 │   │   ├── qbittorrent.yaml
@@ -56,6 +58,7 @@ argocd/
 │   ├── values/
 │   │   ├── alloy-values.yaml
 │   │   ├── authentik-values.yaml
+│   │   ├── ballast-values.yaml
 │   │   ├── bazarr-values.yaml
 │   │   ├── cert-manager-values.yaml
 │   │   ├── headlamp-values.yaml
@@ -63,6 +66,7 @@ argocd/
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   ├── loki-values.yaml
 │   │   ├── metallb-values.yaml
+│   │   ├── metrics-server-values.yaml
 │   │   ├── prometheus-pve-exporter-values.yaml
 │   │   ├── prowlarr-values.yaml
 │   │   ├── qbittorrent-values.yaml
@@ -124,6 +128,7 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). Depends on `sops-secrets-operator` and `secrets` having synced first. |
+| `ballast` | Helm chart `ballast` from `ghcr.io/tight-line/charts` (OCI), values in `dev/values/ballast-values.yaml` | `ballast` | [Ballast](https://github.com/Tight-Line/ballast) - auto-rightsizing operator. Measures real CPU/memory/ephemeral-storage usage per workload (via `metrics-server` and the kubelet Summary API) and applies rightsized requests/limits, either at admission or on already-running pods through the in-place pod resize API. This Application installs the operator, its CRDs (`WorkloadProfile`, `ClusterResourcePolicy`/`ResourcePolicy`, `MetricsSource`, `BallastConfig`), and its cert-manager-backed admission webhook only - it is opt-in per workload via a `ballast.tightlinesoftware.com/mode` label, added by hand later; nothing here enrolls any existing workload. Bundles its own Valkey instance (PVC-backed, `local-path`) for usage history. Depends on `cert-manager` having synced first (the chart's own self-signed Issuer/Certificate for its webhook's serving certificate) and `metrics-server` having synced first (its default `MetricsSource` needs the Metrics API to actually read from). |
 | `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
@@ -132,6 +137,7 @@ groups:
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
+| `metrics-server` | Helm chart `metrics-server` from the official metrics-server chart repository, values in `dev/values/metrics-server-values.yaml` | `kube-system` | Kubernetes Metrics API (`kubectl top nodes`/`kubectl top pods`). Ships with the chart's default kubelet args (no `--kubelet-insecure-tls` or `hostNetwork` override) on the assumption that Talos's kubelet serving certificates validate cleanly against them - confirm with `kubectl top nodes`/`kubectl top pods -A` once this actually syncs, and add `--kubelet-insecure-tls` to `dev/values/metrics-server-values.yaml` only if that check fails with a TLS/x509 error. `ballast` depends on this for its default `kubernetesMetrics` `MetricsSource`. |
 | `prometheus-pve-exporter` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prometheus-pve-exporter-values.yaml` | `monitoring` | Scrapes the separate "noble" Proxmox VE cluster (3 nodes, API at `192.168.10.10:8006`, reachable from this cluster's pods) over its API using a read-only `monitoring@pve`/`PVEAuditor` token, so kube-prometheus-stack's Prometheus can feed a Grafana "Proxmox via Prometheus" dashboard. Mounts the `pve-exporter-config` SopsSecret as `/etc/pve.yml`. Not a plain `/metrics` scrape - it's a blackbox-style multi-target exporter, so its values file's `serviceMonitor` block (native to this chart version, no raw manifest needed) hits `/pve?target=192.168.10.10` and relabels the scraped series' `instance` label to the actual Proxmox host. Depends on the `pve-exporter-config` SopsSecret and `sops-secrets-operator` having synced first. |
 | `prowlarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prowlarr-values.yaml` | `media` | Indexer manager - one place to configure trackers/indexers, pushed out to Sonarr, Radarr, and the downloaders. See [Media stack](#media-stack). |
 | `qbittorrent` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/qbittorrent-values.yaml` | `media` | Torrent download client, routed through a PIA VPN via a gluetun sidecar container in the same pod. See [Media stack](#media-stack). Depends on the `qbittorrent-vpn-credentials` SopsSecret and `sops-secrets-operator` having synced first. |
@@ -793,6 +799,11 @@ management](#secrets-management)).
 
 NOTE: The `metallb-pool` Application needs the `metallb` Application synced
 first, for MetalLB's CRDs and controller.
+
+NOTE: The `ballast` Application needs the `cert-manager` Application synced
+first (for its own self-signed Issuer/Certificate that backs its admission
+webhook's serving certificate) and the `metrics-server` Application synced
+first (so its default `MetricsSource` has the Metrics API to read from).
 
 ## Applications brought under GitOps
 

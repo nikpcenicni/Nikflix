@@ -1,0 +1,53 @@
+# ballast - Kubernetes resource right-sizing operator (github.com/Tight-Line/
+# ballast). Measures real CPU/memory/ephemeral-storage usage per workload and
+# applies rightsized requests/limits, either at admission or via the in-place
+# pod resize API on already-running pods. Installed via its OCI Helm chart
+# (ghcr.io/tight-line/charts/ballast), same two-source shape as any other
+# Helm-chart Application here, just with an OCI repoURL instead of a chart
+# repository index - see https://argo-cd.readthedocs.io/en/stable/user-guide/helm/
+# ("the oci:// syntax is not included" in repoURL).
+#
+# This installs the operator, its CRDs, and its admission webhook only.
+# Nothing here enrolls any existing workload - see
+# ../values/ballast-values.yaml's header comment. Ballast is opt-in per
+# workload via a ballast.tightlinesoftware.com/mode label, added by hand
+# later, on a workload-by-workload basis.
+#
+# Depends on cert-manager (../cert-manager.yaml) having synced first: the
+# chart's certManager.enabled default (true) has it create its own
+# self-signed Issuer/Certificate for the admission webhook's serving
+# certificate, which needs cert-manager's CRDs and controller to already
+# exist - same dependency shape as eclipse-che.yaml/devworkspace-operator.yaml
+# on cert-manager. No sync-wave is set (none is used anywhere in this repo);
+# selfHeal re-converges Ballast's webhook cert on its own if it ever syncs
+# before cert-manager, the same as those other Applications.
+#
+# Also depends on metrics-server (../metrics-server.yaml) having synced
+# first, for the defaultMetricsSources.kubernetesMetrics MetricsSource this
+# chart installs by default to have real data to read.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ballast
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: ghcr.io/tight-line/charts
+      chart: ballast
+      targetRevision: 0.6.0
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/ballast-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: ballast
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
