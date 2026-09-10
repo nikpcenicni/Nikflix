@@ -12,6 +12,13 @@
 # the shared `users` group other data on this NAS already uses). UMASK=002
 # keeps newly-created files/dirs group-writable, matching the setgid bit
 # already set on this NFS export.
+# Enrolled in Ballast's full measure+apply+resize lifecycle (see
+# ../apps/ballast.yaml) - a media-stack convenience app, not
+# cluster-critical infra, so safe to let Ballast rightsize live.
+defaultPodOptions:
+  labels:
+    ballast.tightlinesoftware.com/mode: resize
+
 controllers:
   main:
     containers:

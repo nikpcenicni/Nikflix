@@ -2,6 +2,13 @@
 # ../apps/prowlarr.yaml. Indexer manager - no downloads/library NFS mount
 # needed, only its own config. See
 # docs/architecture/media-stack.md#components.
+# Enrolled in Ballast's full measure+apply+resize lifecycle (see
+# ../apps/ballast.yaml) - a media-stack convenience app, not
+# cluster-critical infra, so safe to let Ballast rightsize live.
+defaultPodOptions:
+  labels:
+    ballast.tightlinesoftware.com/mode: resize
+
 controllers:
   main:
     containers:
