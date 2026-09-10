@@ -132,7 +132,7 @@ groups:
 | `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
-| `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). Not yet SSO-wired - see [SSO / authentik](#sso--authentik). |
+| `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). SSO-wired against authentik - see [SSO / authentik](#sso--authentik) and [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac). Depends on the `headlamp-oidc` SopsSecret and `sops-secrets-operator` having synced first. |
 | `jellyseerr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/jellyseerr-values.yaml` | `media` | User-facing request portal - approved requests get forwarded to Sonarr/Radarr. See [Media stack](#media-stack). |
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
@@ -156,8 +156,8 @@ groups:
 | `ingress-apps` | Raw manifests in `dev/manifests/ingress-apps/` | `default` (each resource sets its own namespace) | `Ingress` resources for ArgoCD, Headlamp, Grafana, and authentik. Each resource routes traffic through Traefik and requests a certificate from the `letsencrypt-prod` cluster issuer. |
 | `media-forward-auth` | Raw manifests in `dev/manifests/media-forward-auth/` | `media` | Traefik `Middleware` for the media stack's authentik SSO - see [SSO: authentik forward-auth](#sso-authentik-forward-auth-domain-level). Depends on `authentik-outpost` having synced first. |
 | `metallb-pool` | Raw manifests in `dev/manifests/metallb-pool/` | `metallb-system` | MetalLB `IPAddressPool` and `L2Advertisement` resources. These resources give MetalLB the address range `192.168.10.240`–`192.168.10.245` to assign to `LoadBalancer` services. |
-| `oidc-rbac` | Raw manifests in `dev/manifests/oidc-rbac/` | `default` (all resources are cluster-scoped) | `ClusterRoleBinding` granting Kubernetes RBAC to the cluster-wide `k8s-human-access` OIDC identity space from the Talos `AuthenticationConfiguration` (live on all three control-plane nodes) - see [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac). |
-| `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, ArgoCD's OIDC/database credentials, pi-hole's API password, and Eclipse Che's OAuth2 client secret (`che-oauth-client-secret`, see [Eclipse Che](#eclipse-che)) - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
+| `oidc-rbac` | Raw manifests in `dev/manifests/oidc-rbac/` | `default` (all resources are cluster-scoped) | `ClusterRoleBinding` resources granting Kubernetes RBAC to the cluster-wide `k8s-human-access` and `headlamp` OIDC identity spaces from the Talos `AuthenticationConfiguration` (live on all three control-plane nodes) - see [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac). |
+| `secrets` | Raw manifests (SOPS-encrypted) in `dev/manifests/secrets/` | `authentik` (each resource sets its own namespace) | `SopsSecret` resources for authentik, Grafana, ArgoCD, and Headlamp's OIDC credentials, ArgoCD's database credentials, pi-hole's API password, and Eclipse Che's OAuth2 client secret (`che-oauth-client-secret`, see [Eclipse Che](#eclipse-che)) - see [Secrets management](#secrets-management). Depends on `sops-secrets-operator` having synced first. |
 
 Every Application above uses automated sync with `prune: true` and
 `selfHeal: true`. This setting means ArgoCD applies matching changes
@@ -194,23 +194,27 @@ cluster and pods land on an unrelated host, which surfaces as a confusing
 TLS certificate mismatch (Grafana) or a token/callback failure (ArgoCD), not
 an obvious DNS error.
 
-Headlamp is **not** fully wired. The authentik-side provider, application,
-and `Headlamp Admins` group exist, but logging in via SSO also requires
-configuring the Kubernetes API server's `--oidc-*` flags (a Talos machine
-config change under `development/talos/`, applied by hand per
-`development/README.md` - out of scope for this GitOps tree, and not yet
-done) and giving Headlamp itself an OIDC client config (Headlamp is not yet
-onboarded as a tracked Application at all - see "Applications not yet
-onboarded" below). Until both of those happen, Headlamp keeps working the
-same way it does today (in-cluster service account), unaffected by
-authentik's presence.
+Headlamp is now fully wired too, the same way `k8s-human-access` is (see
+[Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac) below): its own OIDC
+client config lives in `dev/values/headlamp-values.yaml`, pointed at the
+`headlamp-oidc-secret` Secret that `dev/manifests/secrets/headlamp-oidc.yaml`
+decrypts, and the Kubernetes API server trusts its issuer via the
+`headlamp` `jwt[]` entry in `development/talos/patches/cp-*.yaml` (a Talos
+machine config change, applied by hand per `development/talos/README.md` -
+out of scope for this GitOps tree, but done). Headlamp forwards its OIDC
+`id_token` straight to the Kubernetes API server as a Bearer token on every
+request - confirmed against Headlamp's own docs before wiring any of this,
+specifically to avoid repeating the mistake `che` made below.
 
 ## Cluster-wide OIDC / RBAC
 
 `development/talos/patches/cp-{helium,argon,neon}.yaml` defines a Talos
-`AuthenticationConfiguration` for this cluster. This configuration is not
-live on the cluster yet. It has one JSON Web Token (JWT) authenticator
-entry that trusts this cluster's own authentik as the issuer - see the
+`AuthenticationConfiguration` for this cluster - live on all three
+control-plane nodes (applied by hand, one node at a time, each with the
+reboot Talos required for the change; confirmed directly via `talosctl
+read /var/lib/kube-apiserver/authentication-config.yaml` on all three
+afterward). It has three JSON Web Token (JWT) authenticator entries that
+trust this cluster's own authentik as the issuer - see the
 comments in those patch files, and the "Kubernetes human access" blueprint
 entry in `dev/values/authentik-values.yaml`, for the authentik-side
 OAuth2Provider/Application config. `oidc-rbac` (raw manifests in
@@ -258,7 +262,21 @@ ClusterRoleBinding exists for `che` identities - che-operator provisions
 namespace-scoped RoleBindings itself per user, through `CheCluster`'s
 `devEnvironments.user.clusterRoles` - see [Eclipse Che](#eclipse-che).
 
-Both `jwt[]` entries' OIDC discovery depends on `kube-apiserver` being
+- **`headlamp`** - the Headlamp web dashboard's own OIDC login (see [SSO /
+  authentik](#sso--authentik) above). Same `claimMappings` shape as
+  `k8s-human-access` (`sub`/`groups`, no prefix) rather than `che`'s
+  `name`-based one: Headlamp has no equivalent to che-operator's own
+  per-user RBAC provisioning, so this identity space needs a real,
+  generic `oidc-rbac` binding - `headlamp-oidc-cluster-admin`, bound to
+  `cluster-admin` for the same reason `k8s-human-access` is (the repo
+  owner already has that access today through the X.509 admin
+  kubeconfig; this is a second front door onto the same level, not an
+  expansion of it). Verified live, unlike `che`'s first attempt: Headlamp's
+  own docs confirm it forwards its OIDC `id_token` straight to the
+  Kubernetes API server as a Bearer token on every request, before this
+  entry was added, not after a live failure.
+
+All three `jwt[]` entries' OIDC discovery depends on `kube-apiserver` being
 able to reach `auth.lab.pcenicni.dev` with a certificate it actually
 trusts - not automatic on this cluster, and worth understanding since it
 failed live twice for two different reasons before working:

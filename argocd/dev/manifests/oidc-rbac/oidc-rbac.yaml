@@ -1,8 +1,10 @@
 # RBAC for the cluster-wide OIDC identity space defined by the
-# AuthenticationConfiguration in development/talos/patches/cp-*.yaml (not
-# yet applied live - see that directory's README). A valid JWT from
-# authentik authenticates successfully today but grants zero permissions
-# until a binding like this exists - see
+# AuthenticationConfiguration in development/talos/patches/cp-*.yaml (live
+# on the cluster - confirmed directly via `talosctl read
+# /var/lib/kube-apiserver/authentication-config.yaml` on a control-plane
+# node; the "not yet applied" note that used to be here was stale). A valid
+# JWT from authentik authenticates successfully today but grants zero
+# permissions until a binding like this exists - see
 # argocd/dev/values/authentik-values.yaml's "Kubernetes human access"
 # blueprint entry for the authentik-side group/provider definition this
 # binding references by name.
@@ -42,6 +44,36 @@ metadata:
 subjects:
   - kind: Group
     name: "Kubernetes Admins"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# --- headlamp: web dashboard OIDC login -------------------------------------
+# claimMappings for this issuer also apply an empty prefix to username (sub)
+# and groups (see the `headlamp` jwt[] entry in development/talos/patches/
+# cp-*.yaml), same shape as k8s-human-access above - Headlamp forwards its
+# OIDC id_token straight to the API server as a Bearer token (confirmed
+# against Headlamp's own docs, see dev/values/headlamp-values.yaml's
+# comment), so this identity space is real, unlike the removed "che" one.
+# "Headlamp Admins" is the authentik group created in
+# dev/values/authentik-values.yaml (id: group-headlamp-admins) - akadmin is
+# its only member today, in this single-admin homelab.
+#
+# Bound to cluster-admin for the same reason k8s-human-access is: this
+# represents the repo owner's own access, already equivalent to
+# cluster-admin via the X.509 admin kubeconfig - a second front door onto
+# the same access level, not an expansion of the trust boundary. Revisit if
+# "Headlamp Admins" ever gains a member who isn't the repo owner.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: headlamp-oidc-cluster-admin
+subjects:
+  - kind: Group
+    name: "Headlamp Admins"
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole

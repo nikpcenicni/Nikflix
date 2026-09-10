@@ -2,7 +2,10 @@
 # (see ../../README.md's former "Applications not yet onboarded" note);
 # brought under GitOps at the same chart version already live
 # (headlamp-0.43.0), so this sync is a no-op against the running cluster.
-# Not yet SSO-wired - see ../../README.md's "SSO / authentik" section.
+# SSO-wired against authentik - see ../../README.md's "SSO / authentik"
+# section and ../values/headlamp-values.yaml's comment. Depends on the
+# headlamp-oidc SopsSecret (../manifests/secrets/headlamp-oidc.yaml) and
+# sops-secrets-operator having synced first.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

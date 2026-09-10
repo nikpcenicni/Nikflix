@@ -285,11 +285,13 @@ additionalObjects:
               meta_launch_url: "https://argocd.lab.pcenicni.dev"
 
           # --- Headlamp OAuth2/OIDC provider + application -----------------
-          # authentik-side config only. Logging in still needs Headlamp's
-          # own OIDC client config AND the Kubernetes API server's
-          # --oidc-* flags (Talos machine config, applied by hand per
-          # development/talos/README.md) - neither is wired up yet. See the
-          # NOTE in ../../README.md.
+          # Fully wired: Headlamp's own OIDC client config
+          # (../values/headlamp-values.yaml) and the Kubernetes API server's
+          # `headlamp` jwt[] AuthenticationConfiguration entry
+          # (development/talos/patches/cp-*.yaml, applied by hand per
+          # development/talos/README.md) both reference this provider's
+          # client_id/issuer - see ../../README.md's "SSO / authentik"
+          # section.
           - model: authentik_providers_oauth2.oauth2provider
             id: provider-headlamp
             identifiers:

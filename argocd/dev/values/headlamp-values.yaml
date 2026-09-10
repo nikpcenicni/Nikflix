@@ -1,5 +1,45 @@
 # headlamp - values for the headlamp Helm chart. See ../apps/headlamp.yaml.
-# No overrides - the by-hand `helm install` used chart defaults (`helm get
-# values headlamp -n headlamp` returns null). Kept as an explicit, empty
-# values file to match this repo's convention of every Helm-chart
-# Application having a values file.
+# Wires up OIDC login against authentik, completing what
+# ../../README.md's "SSO / authentik" section documented as the two missing
+# pieces: this file (Headlamp's own OIDC client config) and the `headlamp`
+# jwt[] entry added to development/talos/patches/cp-*.yaml's
+# AuthenticationConfiguration.
+#
+# Headlamp forwards its OIDC id_token straight to the Kubernetes API server
+# as a Bearer token on every request (confirmed against Headlamp's own
+# docs before wiring this - unlike Eclipse Che's dashboard on non-OpenShift,
+# which does not do this - see oidc-rbac.yaml's comment on that dead end).
+# So this is the client half of the same trust relationship the API
+# server's `headlamp` jwt[] entry establishes, not just a login-UI nicety.
+#
+# externalSecret (not config.oidc.secret.create) points at the
+# headlamp-oidc-secret Secret decrypted from
+# ../manifests/secrets/headlamp-oidc.yaml by sops-secrets-operator - every
+# key in that Secret lands in the container's env via this chart's envFrom,
+# which is also where OIDC_ISSUER_URL/OIDC_CALLBACK_URL/OIDC_SCOPES actually
+# come from at runtime even though they aren't secret-shaped (simplest way
+# to guarantee those env vars exist - see that secret file's own comment).
+#
+# callbackURL below is a real (non-secret) values field purely to satisfy
+# this chart's own template gating - it decides whether the
+# `-oidc-callback-url` arg gets added at all, the deployed *value* still
+# comes from the OIDC_CALLBACK_URL env var above. hasScopes is the
+# equivalent gate for the `-oidc-scopes` arg. Confirmed both of these by
+# reading the chart's actual deployment.yaml template (headlamp-0.43.0,
+# the version pinned in ../apps/headlamp.yaml), not assumed from the
+# values.yaml schema comments alone.
+#
+# useCookie: true - recommended for exactly this case (a real external
+# hostname behind an Ingress, not an in-cluster-only dashboard) per
+# Headlamp's own docs ("Enable using OIDC cookie for authentication
+# outside of cluster").
+config:
+  oidc:
+    secret:
+      create: false
+    externalSecret:
+      enabled: true
+      name: headlamp-oidc-secret
+      hasScopes: true
+    callbackURL: "https://headlamp.lab.pcenicni.dev/oidc-callback"
+    useCookie: true

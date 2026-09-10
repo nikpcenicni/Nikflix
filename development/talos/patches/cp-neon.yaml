@@ -86,6 +86,30 @@ machine:
             userValidationRules:
               - expression: "!user.username.startsWith('system:')"
                 message: "che identities must not use the reserved system: prefix"
+          # Headlamp dashboard - forwards its OIDC id_token straight to the
+          # API server as a Bearer token (confirmed against Headlamp's own
+          # docs before adding this, precisely to avoid repeating the
+          # wrong assumption made about Che above). Same sub-based,
+          # unprefixed claimMappings shape as k8s-human-access, not che's
+          # name-based one - Headlamp has no equivalent to che-operator's
+          # own per-user RBAC provisioning, so this identity space needs a
+          # real generic RBAC binding (see argocd/dev/manifests/oidc-rbac/
+          # oidc-rbac.yaml's headlamp-oidc-cluster-admin binding).
+          - issuer:
+              url: https://auth.lab.pcenicni.dev/application/o/headlamp/
+              audiences:
+                - "7b99233e5edd2055059aa5f1ed0890f3"
+              audienceMatchPolicy: MatchAny
+            claimMappings:
+              username:
+                claim: "sub"
+                prefix: ""
+              groups:
+                claim: "groups"
+                prefix: ""
+            userValidationRules:
+              - expression: "!user.username.startsWith('system:')"
+                message: "headlamp identities must not use the reserved system: prefix"
 cluster:
   apiServer:
     extraArgs:
