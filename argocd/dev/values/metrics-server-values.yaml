@@ -3,15 +3,18 @@
 # (`kubectl top nodes`/`kubectl top pods`, and CPU/memory usage data for
 # Ballast's kubernetesMetrics MetricsSource - see ../apps/ballast.yaml).
 #
-# No --kubelet-insecure-tls or hostNetwork override is set here, on the
-# assumption that Talos's kubelet serving certificates (signed by the
-# cluster's own CA) validate cleanly against the chart's default kubelet args
-# (--kubelet-preferred-address-types=InternalIP,...). This was validated with
-# `helm template` and `kubectl apply --dry-run=server` only, not a real
-# deploy - confirm with `kubectl top nodes`/`kubectl top pods -A` once this
-# Application actually syncs, and add --kubelet-insecure-tls only if that
-# check fails with a TLS/x509 error (don't add it preemptively).
-#
+# --kubelet-insecure-tls confirmed necessary live: without it every node
+# scrape failed with "x509: cannot validate certificate for <node IP>
+# because it doesn't contain any IP SANs" - Talos's kubelet serving certs
+# are valid but only SAN the node's hostname, not its IP, and this chart's
+# default --kubelet-preferred-address-types prefers InternalIP first. The
+# Metrics API itself is still served over TLS to callers (kube-apiserver,
+# Ballast, `kubectl top`) via this chart's own generated serving
+# certificate - this flag only disables metrics-server's *outbound*
+# verification of each kubelet's cert, not inbound auth to metrics-server.
+args:
+  - --kubelet-insecure-tls
+
 # Resources trimmed down from the chart's own defaults (100m/200Mi request, no
 # limit), matching this repo's dev-cluster convention of scaling requests/
 # limits down for these VMs - see the comment at the top of
