@@ -1,0 +1,72 @@
+# prometheus-pve-exporter - values for the bjw-s/app-template Helm chart.
+# See ../apps/prometheus-pve-exporter.yaml. Scrapes the "noble" Proxmox VE
+# cluster (3 nodes, API at 192.168.10.10:8006, reachable from this cluster's
+# pods) using a read-only monitoring@pve/PVEAuditor API token.
+#
+# The pve-exporter-config SopsSecret
+# (../manifests/secrets/pve-exporter.yaml) holds a single stringData key,
+# pve.yml, in the exact format this image reads from /etc/pve.yml (a
+# `default:` block with user/token_name/token_value/verify_ssl) - mounted
+# below as a `type: secret` persistence item at /etc, so the pve.yml key
+# lands at /etc/pve.yml. The image's default entrypoint picks this up with
+# no command/args override needed, and serves on :9221 at /pve.
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: prompve/prometheus-pve-exporter
+          tag: "3.10.0"
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      metrics:
+        port: 9221
+
+persistence:
+  config:
+    enabled: true
+    type: secret
+    name: pve-exporter-config
+    globalMounts:
+      - path: /etc
+
+# prometheus-pve-exporter is a blackbox-style multi-target exporter, not a
+# plain /metrics endpoint: Prometheus has to hit /pve?target=<proxmox-host>
+# on the exporter's own Service, then relabel the scraped series so
+# `instance` reads as the actual Proxmox host (192.168.10.10), not the
+# exporter pod's own address. This is the exporter's own documented
+# Prometheus relabeling recipe, translated into this chart's native
+# serviceMonitor block (app-template 5.0.1 supports emitting a ServiceMonitor
+# directly - no separate raw manifest needed).
+#
+# `release: kube-prometheus-stack` is required - this cluster's Prometheus
+# only watches ServiceMonitors carrying that exact label (same convention as
+# ../manifests/argocd-config/servicemonitors.yaml).
+serviceMonitor:
+  main:
+    service:
+      identifier: main
+    labels:
+      release: kube-prometheus-stack
+    endpoints:
+      - port: metrics
+        path: /pve
+        interval: 30s
+        params:
+          target: ["192.168.10.10"]
+        relabelings:
+          - sourceLabels: ["__address__"]
+            targetLabel: __param_target
+          - sourceLabels: ["__param_target"]
+            targetLabel: instance
+          - targetLabel: __address__
+            replacement: prometheus-pve-exporter:9221

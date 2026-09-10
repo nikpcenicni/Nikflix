@@ -34,6 +34,7 @@ argocd/
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
 │   │   ├── metallb.yaml
+│   │   ├── prometheus-pve-exporter.yaml
 │   │   ├── prowlarr.yaml
 │   │   ├── qbittorrent.yaml
 │   │   ├── radarr.yaml
@@ -62,6 +63,7 @@ argocd/
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   ├── loki-values.yaml
 │   │   ├── metallb-values.yaml
+│   │   ├── prometheus-pve-exporter-values.yaml
 │   │   ├── prowlarr-values.yaml
 │   │   ├── qbittorrent-values.yaml
 │   │   ├── radarr-values.yaml
@@ -130,6 +132,7 @@ groups:
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
+| `prometheus-pve-exporter` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prometheus-pve-exporter-values.yaml` | `monitoring` | Scrapes the separate "noble" Proxmox VE cluster (3 nodes, API at `192.168.10.10:8006`, reachable from this cluster's pods) over its API using a read-only `monitoring@pve`/`PVEAuditor` token, so kube-prometheus-stack's Prometheus can feed a Grafana "Proxmox via Prometheus" dashboard. Mounts the `pve-exporter-config` SopsSecret as `/etc/pve.yml`. Not a plain `/metrics` scrape - it's a blackbox-style multi-target exporter, so its values file's `serviceMonitor` block (native to this chart version, no raw manifest needed) hits `/pve?target=192.168.10.10` and relabels the scraped series' `instance` label to the actual Proxmox host. Depends on the `pve-exporter-config` SopsSecret and `sops-secrets-operator` having synced first. |
 | `prowlarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prowlarr-values.yaml` | `media` | Indexer manager - one place to configure trackers/indexers, pushed out to Sonarr, Radarr, and the downloaders. See [Media stack](#media-stack). |
 | `qbittorrent` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/qbittorrent-values.yaml` | `media` | Torrent download client, routed through a PIA VPN via a gluetun sidecar container in the same pod. See [Media stack](#media-stack). Depends on the `qbittorrent-vpn-credentials` SopsSecret and `sops-secrets-operator` having synced first. |
 | `radarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/radarr-values.yaml` | `media` | Movie automation - same as Sonarr, for movies. See [Media stack](#media-stack). |

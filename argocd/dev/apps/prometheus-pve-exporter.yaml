@@ -1,0 +1,36 @@
+# prometheus-pve-exporter - scrapes the "noble" Proxmox VE cluster's API
+# (192.168.10.10:8006) using a read-only monitoring@pve/PVEAuditor token, so
+# its metrics land in kube-prometheus-stack's Prometheus and feed a Grafana
+# "Proxmox via Prometheus" dashboard. Values in
+# ../values/prometheus-pve-exporter-values.yaml, including a native
+# app-template `serviceMonitor` block - see that file's comments for the
+# blackbox-style relabeling this exporter needs.
+# Depends on the pve-exporter-config SopsSecret
+# (../manifests/secrets/pve-exporter.yaml) and sops-secrets-operator having
+# synced first, same as any other SopsSecret-consuming Application.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-pve-exporter
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/prometheus-pve-exporter-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
