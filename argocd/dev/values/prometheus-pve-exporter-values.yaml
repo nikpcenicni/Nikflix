@@ -7,9 +7,10 @@
 # (../manifests/secrets/pve-exporter.yaml) holds a single stringData key,
 # pve.yml, in the exact format this image reads from /etc/pve.yml (a
 # `default:` block with user/token_name/token_value/verify_ssl) - mounted
-# below as a `type: secret` persistence item at /etc, so the pve.yml key
-# lands at /etc/pve.yml. The image's default entrypoint picks this up with
-# no command/args override needed, and serves on :9221 at /pve.
+# below as a `type: secret` persistence item with subPath, scoped to just
+# that one file at /etc/pve.yml (see the mount's own comment for why a
+# whole-/etc mount doesn't work). The image's default entrypoint picks this
+# up with no command/args override needed, and serves on :9221 at /pve.
 controllers:
   main:
     containers:
@@ -37,7 +38,14 @@ persistence:
     type: secret
     name: pve-exporter-config
     globalMounts:
-      - path: /etc
+      # A whole-/etc mount blocks kubelet from bind-mounting its own
+      # /etc/hosts, /etc/hostname, /etc/resolv.conf into the container (the
+      # Secret volume is read-only, so runc can't create those mountpoints
+      # inside it) - confirmed live: "make mountpoint /etc/hosts: read-only
+      # file system". subPath scopes the mount to just the pve.yml key.
+      - path: /etc/pve.yml
+        subPath: pve.yml
+        readOnly: true
 
 # prometheus-pve-exporter is a blackbox-style multi-target exporter, not a
 # plain /metrics endpoint: Prometheus has to hit /pve?target=<proxmox-host>
