@@ -5,12 +5,13 @@
 #
 # The pve-exporter-config SopsSecret
 # (../manifests/secrets/pve-exporter.yaml) holds a single stringData key,
-# pve.yml, in the exact format this image reads from /etc/pve.yml (a
-# `default:` block with user/token_name/token_value/verify_ssl) - mounted
-# below as a `type: secret` persistence item with subPath, scoped to just
-# that one file at /etc/pve.yml (see the mount's own comment for why a
-# whole-/etc mount doesn't work). The image's default entrypoint picks this
-# up with no command/args override needed, and serves on :9221 at /pve.
+# pve.yml, in the exact format this image reads (a `default:` block with
+# user/token_name/token_value/verify_ssl) - mounted below as a `type: secret`
+# persistence item with subPath, scoped to just that one file. The image's
+# default config path is /etc/prometheus/pve.yml (confirmed live via the
+# FileNotFoundError this crashed with before this path was corrected - not
+# the more obvious-looking /etc/pve.yml some usage examples show for older
+# versions). No command/args override needed; serves on :9221 at /pve.
 controllers:
   main:
     containers:
@@ -38,12 +39,13 @@ persistence:
     type: secret
     name: pve-exporter-config
     globalMounts:
-      # A whole-/etc mount blocks kubelet from bind-mounting its own
-      # /etc/hosts, /etc/hostname, /etc/resolv.conf into the container (the
-      # Secret volume is read-only, so runc can't create those mountpoints
-      # inside it) - confirmed live: "make mountpoint /etc/hosts: read-only
-      # file system". subPath scopes the mount to just the pve.yml key.
-      - path: /etc/pve.yml
+      # A whole-directory mount at /etc blocks kubelet from bind-mounting its
+      # own /etc/hosts, /etc/hostname, /etc/resolv.conf into the container
+      # (the Secret volume is read-only, so runc can't create those
+      # mountpoints inside it) - confirmed live: "make mountpoint /etc/hosts:
+      # read-only file system". subPath scopes the mount to just the
+      # pve.yml key, at the path this image actually reads by default.
+      - path: /etc/prometheus/pve.yml
         subPath: pve.yml
         readOnly: true
 
