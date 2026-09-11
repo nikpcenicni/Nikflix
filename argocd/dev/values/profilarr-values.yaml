@@ -40,9 +40,13 @@ controllers:
         resources:
           requests:
             cpu: 25m
-            memory: 128Mi
+            memory: 256Mi
           limits:
-            memory: 512Mi
+            # Confirmed live: 512Mi OOMKilled this container immediately on
+            # every start (loading its custom-format/quality-profile
+            # database is memory-heavier than the other small arr-stack
+            # apps here).
+            memory: 1Gi
       parser:
         image:
           repository: ghcr.io/dictionarry-hub/profilarr-parser
