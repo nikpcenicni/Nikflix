@@ -35,6 +35,11 @@ controllers:
         env:
           TZ: "Etc/UTC"
           AUTH: "off"
+          # Needed regardless of AUTH mode - Profilarr warns/validates
+          # against this any time it's behind a reverse proxy (Traefik
+          # here), not just for OIDC's callback URL. Confirmed live: without
+          # it, Profilarr showed a reverse-proxy warning.
+          ORIGIN: "https://profilarr.lab.pcenicni.dev"
           PARSER_HOST: "localhost"
           PARSER_PORT: "5000"
         resources:
