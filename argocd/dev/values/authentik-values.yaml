@@ -95,6 +95,18 @@ server:
   # every other app's Ingress in this cluster - not the chart's own Ingress.
   ingress:
     enabled: false
+  # The server pod already listens on :9300 (metrics.enabled here just adds
+  # the Service the chart doesn't create by default) - feeds a Grafana
+  # dashboard the same way ../manifests/argocd-config/servicemonitors.yaml's
+  # ServiceMonitors do for ArgoCD. `release: kube-prometheus-stack` is
+  # required - this cluster's Prometheus only watches ServiceMonitors
+  # carrying that exact label.
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      labels:
+        release: kube-prometheus-stack
 
 worker:
   resources:
@@ -103,6 +115,14 @@ worker:
       memory: 512Mi
     limits:
       memory: 1Gi
+  # Same as server.metrics above - the worker pod has its own separate
+  # :9300 metrics listener and its own Service/ServiceMonitor.
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      labels:
+        release: kube-prometheus-stack
 
 postgresql:
   enabled: true
