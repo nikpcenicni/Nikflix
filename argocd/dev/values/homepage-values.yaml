@@ -89,7 +89,13 @@ ingress:
       # homepage-no-cache (rawResources below) - Traefik applies
       # middlewares left to right, order doesn't matter between these two
       # since they touch different things (auth vs. response headers).
-      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd,homepage-no-cache@kubernetescrd
+      # Reference format is <namespace>-<name>@kubernetescrd for
+      # Ingress-annotation middleware refs (confirmed against the
+      # media-authentik-forward-auth reference above: namespace `media` +
+      # name `authentik-forward-auth`) - NOT just the object's own name,
+      # which 404'd every request here until this was caught live via
+      # Traefik's own logs (`middleware ... does not exist`).
+      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd,homepage-homepage-no-cache@kubernetescrd
     hosts:
       - host: dash.lab.pcenicni.dev
         paths:
