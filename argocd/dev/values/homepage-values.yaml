@@ -107,35 +107,56 @@ persistence:
       - path: /app/config/bookmarks.yaml
         subPath: bookmarks.yaml
         readOnly: true
+      - path: /app/config/custom.css
+        subPath: custom.css
+        readOnly: true
 
 configMaps:
   homepage-config:
     data:
       # Global look/layout. layout: groups must list every group used in
-      # services.yaml below, in display order.
+      # services.yaml below, in display order. No background image (would
+      # mean either an external URL - a dependency this LAN-only dashboard
+      # shouldn't have - or shipping a binary asset through a YAML
+      # ConfigMap, which doesn't fit this repo's text-only GitOps
+      # convention) - custom.css below carries the rest of the visual
+      # polish instead.
       settings.yaml: |
         title: Nikflix Homelab
         theme: dark
-        color: slate
-        headerStyle: clean
+        color: violet
+        headerStyle: boxed
+        iconStyle: theme
         statusStyle: dot
         hideVersion: true
+        useEqualHeights: true
+        cardBlur: xs
+        quicklaunch:
+          searchDescriptions: true
+          showSearchSuggestions: false
+          hideVisitURL: false
+          provider: duckduckgo
         layout:
           Media Requests:
             style: row
             columns: 1
+            icon: mdi-movie-open-play
           Arr Stack:
             style: row
             columns: 3
+            icon: mdi-television-classic
           Downloads:
             style: row
             columns: 2
+            icon: mdi-download-network
           Monitoring:
             style: row
             columns: 2
+            icon: mdi-chart-line
           Platform:
             style: row
             columns: 3
+            icon: mdi-server-network
 
       # Every tile below is grouped into one of settings.yaml's layout
       # sections. See ../../README.md's Applications table for what each
@@ -315,3 +336,51 @@ configMaps:
             - Nikflix (GitOps repo):
                 - abbr: GH
                   href: https://github.com/nikpcenicni/Nikflix
+
+      # Loaded by Homepage itself as a real stylesheet
+      # (/api/config/custom.css) - see
+      # https://gethomepage.dev/configs/custom-css-js/. Deliberately
+      # generic/tag-level selectors plus the one documented stable hook
+      # (#page_wrapper) rather than guessed Tailwind utility-class names,
+      # which change across Homepage releases without notice.
+      custom.css: |
+        /* Every service/bookmark/quicklaunch tile is an <a> - lift +
+           brighten on hover instead of the flat default. */
+        #page_wrapper a {
+          transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+        }
+        #page_wrapper a:hover {
+          transform: translateY(-2px);
+          filter: brightness(1.08);
+        }
+
+        /* Slightly softer corners on service icons. */
+        #page_wrapper img {
+          border-radius: 0.375rem;
+        }
+
+        /* Scrollbar matched to the violet accent instead of the browser
+           default. */
+        ::-webkit-scrollbar {
+          width: 10px;
+          height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: rgba(139, 92, 246, 0.4);
+          border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: rgba(139, 92, 246, 0.7);
+        }
+        html {
+          scrollbar-color: rgba(139, 92, 246, 0.4) transparent;
+        }
+
+        /* A bit more presence on group/section headers. */
+        #page_wrapper h2,
+        #page_wrapper h3 {
+          letter-spacing: 0.02em;
+        }
