@@ -76,3 +76,31 @@ spec:
     - name: https
       port: 9443
       targetPort: https
+    - name: metrics
+      port: 9300
+      targetPort: metrics
+---
+# Feeds the same Grafana authentik dashboard the server/worker
+# ServiceMonitors do (see ../../values/authentik-values.yaml's
+# server.metrics/worker.metrics) - most of that dashboard's panels are
+# actually authentik_outpost_* metrics, which only this outpost exports,
+# not the main server/worker. `release: kube-prometheus-stack` is
+# required - this cluster's Prometheus only watches ServiceMonitors
+# carrying that exact label.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: authentik-outpost-media
+  namespace: authentik
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - authentik
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authentik-outpost-media
+  endpoints:
+    - port: metrics
+      interval: 30s
