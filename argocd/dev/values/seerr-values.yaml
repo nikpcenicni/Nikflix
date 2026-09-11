@@ -1,7 +1,16 @@
-# Jellyseerr - values for the bjw-s/app-template Helm chart. See
-# ../apps/jellyseerr.yaml. Request portal - talks to Sonarr/Radarr over
-# their APIs only, no NFS mount needed. See
-# docs/architecture/media-stack.md#components.
+# Seerr - values for the bjw-s/app-template Helm chart. See ../apps/seerr.yaml.
+# Request portal - talks to Sonarr/Radarr over their APIs only, no NFS mount
+# needed. See docs/architecture/media-stack.md#components.
+#
+# Replaces Jellyseerr (seerr-team/seerr on Docker Hub is the same project,
+# renamed - docs.seerr.dev). Deployed as a fresh instance, not migrated from
+# Jellyseerr's old PVC: renaming the Application/release also renames the
+# PVC app-template derives from it, so continuing to reuse the old data
+# would have meant either keeping stale "jellyseerr"-named resources around
+# just for PVC continuity, or a manual PVC migration - a clean slate
+# (re-add Sonarr/Radarr, re-request anything that mattered) was the chosen
+# tradeoff instead.
+#
 # Enrolled in Ballast's full measure+apply+resize lifecycle (see
 # ../apps/ballast.yaml) - a media-stack convenience app, not
 # cluster-critical infra, so safe to let Ballast rightsize live.
@@ -14,7 +23,7 @@ controllers:
     containers:
       main:
         image:
-          repository: fallenbagel/jellyseerr
+          repository: seerr/seerr
           tag: latest
         env:
           # Adjust to your local timezone.
@@ -39,7 +48,7 @@ ingress:
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
     hosts:
-      - host: jellyseerr.lab.pcenicni.dev
+      - host: seerr.lab.pcenicni.dev
         paths:
           - path: /
             pathType: Prefix
@@ -47,8 +56,8 @@ ingress:
               identifier: main
               port: http
     tls:
-      - hosts: ["jellyseerr.lab.pcenicni.dev"]
-        secretName: jellyseerr-tls
+      - hosts: ["seerr.lab.pcenicni.dev"]
+        secretName: seerr-tls
 
 persistence:
   config:

@@ -528,7 +528,7 @@ additionalObjects:
           # Single Proxy Provider covers every *.lab.pcenicni.dev host via
           # cookie_domain, rather than one provider per app - login once,
           # reach sonarr/radarr/prowlarr/bazarr/qbittorrent/sabnzbd without
-          # re-authenticating. Jellyseerr is deliberately not behind this -
+          # re-authenticating. Seerr is deliberately not behind this -
           # see argocd/README.md's "Media stack" section. The outpost this
           # provider is assigned to is deployed by hand (raw manifests in
           # ../manifests/authentik-outpost/, not authentik-managed), since
