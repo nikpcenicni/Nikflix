@@ -1,0 +1,3 @@
+# Local-only credentials, never committed - see argocd/dev/values/homepage-values.yaml's
+# custom.js comment for what UNSPLASH_ACCESS_KEY here is used for.
+.env
