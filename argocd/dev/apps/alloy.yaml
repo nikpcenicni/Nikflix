@@ -1,6 +1,19 @@
 # Per-node Loki log shipper (daemonset), values in ../values/alloy-values.yaml.
 # Same "monitoring" namespace as loki.yaml, which it ships logs to. See
 # docs/architecture/talos.md's "Core platform applications" (log shipper).
+#
+# Bumped 1.11.0 (image v1.18.0) -> 1.12.1 (image v1.19.2): the
+# talos-dev-worker-argon replica was stuck in a permanent SIGSEGV
+# crashloop (exit 139, instantly on every start, zero log output) that
+# survived a fresh `talosctl image pull` of v1.18.0 on that node - ruled
+# out node/CPU/config/memory-limit causes one at a time (identical CPU
+# flags vs working nodes, node otherwise healthy, doubling the memory
+# limit made no difference), then confirmed directly: a throwaway Pod
+# running grafana/alloy:v1.19.2 with this exact config on that same node
+# worked cleanly, while v1.18.0 kept segfaulting. Points at corrupted
+# locally-cached image bytes for that one tag on that one node,
+# specifically - moving off the bad tag entirely sidesteps it rather than
+# chasing why the local cache didn't self-heal.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,7 +24,7 @@ spec:
   sources:
     - repoURL: https://grafana.github.io/helm-charts
       chart: alloy
-      targetRevision: 1.11.0
+      targetRevision: 1.12.1
       helm:
         valueFiles:
           - $values/argocd/dev/values/alloy-values.yaml
