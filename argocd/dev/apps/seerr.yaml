@@ -1,12 +1,16 @@
-# Jellyseerr - user-facing request portal, forwards approved requests to
-# Sonarr/Radarr. Values in ../values/jellyseerr-values.yaml. See
+# Seerr - user-facing request portal, forwards approved requests to
+# Sonarr/Radarr. Values in ../values/seerr-values.yaml. See
 # docs/architecture/media-stack.md#components. First-time setup (connecting
-# Sonarr/Radarr, Jellyfin on the Mac Mini) is manual, through Jellyseerr's
-# own web UI - see ../../README.md's "Media stack" section.
+# Sonarr/Radarr, Jellyfin on the Mac Mini) is manual, through Seerr's own
+# web UI - see ../../README.md's "Media stack" section.
+#
+# Replaces the former jellyseerr Application (seerr-team/seerr is the same
+# project, renamed) - deployed as a fresh instance/PVC, not migrated, see
+# ../values/seerr-values.yaml's comment.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: jellyseerr
+  name: seerr
   namespace: argocd
 spec:
   project: default
@@ -16,7 +20,7 @@ spec:
       targetRevision: 5.0.1
       helm:
         valueFiles:
-          - $values/argocd/dev/values/jellyseerr-values.yaml
+          - $values/argocd/dev/values/seerr-values.yaml
     - repoURL: https://github.com/nikpcenicni/Nikflix.git
       targetRevision: main
       ref: values

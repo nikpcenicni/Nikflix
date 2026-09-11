@@ -1,7 +1,7 @@
 # Traefik ForwardAuth middleware for the media stack's authentik-backed
 # SSO. Referenced by sonarr/radarr/prowlarr/bazarr/qbittorrent/sabnzbd's
 # Ingress annotations (traefik.ingress.kubernetes.io/router.middlewares) in
-# their values files - not jellyseerr, see argocd/README.md's "Media stack"
+# their values files - not seerr, see argocd/README.md's "Media stack"
 # section. Points at the authentik-outpost Application
 # (../authentik-outpost/) - domain-level forward auth, so one login covers
 # every *.lab.pcenicni.dev host in cookie_domain, not just this namespace's

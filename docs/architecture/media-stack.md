@@ -19,7 +19,7 @@ manages these workloads through GitOps.
 
 | App | Purpose | Runs on | VPN |
 |-----|---------|---------|-----|
-| Jellyseerr | User-facing request portal — approved requests get forwarded to Sonarr/Radarr | Talos | No |
+| Seerr | User-facing request portal — approved requests get forwarded to Sonarr/Radarr | Talos | No |
 | Sonarr | TV automation — tracks wanted episodes, searches indexers, sends grabs to a downloader, imports finished files | Talos | No |
 | Radarr | Same as Sonarr, for movies | Talos | No |
 | Prowlarr | Indexer manager — one place to configure trackers/indexers, pushed out to Sonarr, Radarr, and the downloaders | Talos | No |
@@ -134,7 +134,7 @@ no longer needs to exist in `downloads/` at all.
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant JS as Jellyseerr
+    participant JS as Seerr
     participant Ar as Sonarr / Radarr
     participant Pr as Prowlarr
     participant DL as qBittorrent (VPN) / SABnzbd
@@ -160,7 +160,7 @@ instead of reacting to each import.
 
 Ingress into the *arr stack's web User Interfaces (UIs) reuses the same
 ingress-nginx and cert-manager setup from
-[talos.md](talos.md#core-platform-applications). This covers Jellyseerr,
+[talos.md](talos.md#core-platform-applications). This covers Seerr,
 Sonarr, Radarr, Prowlarr, Bazarr, qBittorrent, and SABnzbd. This app tier
 has no separate ingress layer.
 

@@ -31,7 +31,6 @@ argocd/
 │   │   ├── cert-manager.yaml
 │   │   ├── eclipse-che.yaml
 │   │   ├── headlamp.yaml
-│   │   ├── jellyseerr.yaml
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
 │   │   ├── metallb.yaml
@@ -41,6 +40,7 @@ argocd/
 │   │   ├── qbittorrent.yaml
 │   │   ├── radarr.yaml
 │   │   ├── sabnzbd.yaml
+│   │   ├── seerr.yaml
 │   │   ├── sonarr.yaml
 │   │   ├── sops-secrets-operator.yaml
 │   │   ├── traefik.yaml
@@ -62,7 +62,6 @@ argocd/
 │   │   ├── bazarr-values.yaml
 │   │   ├── cert-manager-values.yaml
 │   │   ├── headlamp-values.yaml
-│   │   ├── jellyseerr-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   ├── loki-values.yaml
 │   │   ├── metallb-values.yaml
@@ -72,6 +71,7 @@ argocd/
 │   │   ├── qbittorrent-values.yaml
 │   │   ├── radarr-values.yaml
 │   │   ├── sabnzbd-values.yaml
+│   │   ├── seerr-values.yaml
 │   │   ├── sonarr-values.yaml
 │   │   ├── sops-secrets-operator-values.yaml
 │   │   └── traefik-values.yaml
@@ -128,12 +128,11 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). The server and worker pods each expose their own `:9300` metrics endpoint; `server.metrics`/`worker.metrics` (chart-native `enabled`/`serviceMonitor.enabled`, not raw manifests) turn on the Service + ServiceMonitor pair for each, feeding a Grafana authentik dashboard. Depends on `sops-secrets-operator` and `secrets` having synced first. |
-| `ballast` | Helm chart `ballast` from `ghcr.io/tight-line/charts` (OCI), values in `dev/values/ballast-values.yaml` | `ballast` | [Ballast](https://github.com/Tight-Line/ballast) - auto-rightsizing operator. Measures real CPU/memory/ephemeral-storage usage per workload (via `metrics-server` and the kubelet Summary API) and applies rightsized requests/limits, either at admission or on already-running pods through the in-place pod resize API. This Application installs the operator, its CRDs (`WorkloadProfile`, `ClusterResourcePolicy`/`ResourcePolicy`, `MetricsSource`, `BallastConfig`), and its cert-manager-backed admission webhook - it is opt-in per workload via a `ballast.tightlinesoftware.com/mode` label on the workload's pod template (set through `defaultPodOptions.labels` in that app-template Application's own values file, not here). The full media stack (`bazarr`, `jellyseerr`, `prowlarr`, `qbittorrent`, `radarr`, `sabnzbd`, `sonarr`) is enrolled at `mode: resize`, the full measure+apply+resize lifecycle - convenience apps, not cluster-critical infra. Nothing outside the media stack is enrolled. Bundles its own Valkey instance (PVC-backed, `local-path`) for usage history. Depends on `cert-manager` having synced first (the chart's own self-signed Issuer/Certificate for its webhook's serving certificate) and `metrics-server` having synced first (its default `MetricsSource` needs the Metrics API to actually read from). |
+| `ballast` | Helm chart `ballast` from `ghcr.io/tight-line/charts` (OCI), values in `dev/values/ballast-values.yaml` | `ballast` | [Ballast](https://github.com/Tight-Line/ballast) - auto-rightsizing operator. Measures real CPU/memory/ephemeral-storage usage per workload (via `metrics-server` and the kubelet Summary API) and applies rightsized requests/limits, either at admission or on already-running pods through the in-place pod resize API. This Application installs the operator, its CRDs (`WorkloadProfile`, `ClusterResourcePolicy`/`ResourcePolicy`, `MetricsSource`, `BallastConfig`), and its cert-manager-backed admission webhook - it is opt-in per workload via a `ballast.tightlinesoftware.com/mode` label on the workload's pod template (set through `defaultPodOptions.labels` in that app-template Application's own values file, not here). The full media stack (`bazarr`, `seerr`, `prowlarr`, `qbittorrent`, `radarr`, `sabnzbd`, `sonarr`) is enrolled at `mode: resize`, the full measure+apply+resize lifecycle - convenience apps, not cluster-critical infra. Nothing outside the media stack is enrolled. Bundles its own Valkey instance (PVC-backed, `local-path`) for usage history. Depends on `cert-manager` having synced first (the chart's own self-signed Issuer/Certificate for its webhook's serving certificate) and `metrics-server` having synced first (its default `MetricsSource` needs the Metrics API to actually read from). |
 | `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
 | `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). SSO-wired against authentik - see [SSO / authentik](#sso--authentik) and [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac). Depends on the `headlamp-oidc` SopsSecret and `sops-secrets-operator` having synced first. |
-| `jellyseerr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/jellyseerr-values.yaml` | `media` | User-facing request portal - approved requests get forwarded to Sonarr/Radarr. See [Media stack](#media-stack). |
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
@@ -143,6 +142,7 @@ groups:
 | `qbittorrent` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/qbittorrent-values.yaml` | `media` | Torrent download client, routed through a PIA VPN via a gluetun sidecar container in the same pod. See [Media stack](#media-stack). Depends on the `qbittorrent-vpn-credentials` SopsSecret and `sops-secrets-operator` having synced first. |
 | `radarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/radarr-values.yaml` | `media` | Movie automation - same as Sonarr, for movies. See [Media stack](#media-stack). |
 | `sabnzbd` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/sabnzbd-values.yaml` | `media` | Usenet download client - no VPN needed (provider-based, not peer-to-peer). See [Media stack](#media-stack). |
+| `seerr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/seerr-values.yaml` | `media` | User-facing request portal - approved requests get forwarded to Sonarr/Radarr. Replaces the former `jellyseerr` Application (seerr-team/seerr is the same project, renamed) - deployed as a fresh instance, not migrated. See [Media stack](#media-stack). |
 | `sonarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/sonarr-values.yaml` | `media` | TV automation - tracks wanted episodes, searches indexers, sends grabs to a downloader, imports finished files. See [Media stack](#media-stack). |
 | `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
 | `traefik` | Helm chart `traefik` from the official traefik chart repository, values in `dev/values/traefik-values.yaml` | `traefik` | Ingress controller. Brought under GitOps at the chart version already running (`traefik-41.0.2`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `ingress-apps` routes through this. Syncs with `ServerSideApply=true`. |
@@ -491,7 +491,7 @@ diff against) still applies whenever it comes back.
 
 ## Media stack
 
-`jellyseerr`, `sonarr`, `radarr`, `prowlarr`, `qbittorrent`, `sabnzbd`, and
+`seerr`, `sonarr`, `radarr`, `prowlarr`, `qbittorrent`, `sabnzbd`, and
 `bazarr` (all in the `media` namespace) are the Talos-side half of
 [docs/architecture/media-stack.md](../docs/architecture/media-stack.md).
 Jellyfin itself runs on a Mac Mini outside the cluster and outside this
@@ -589,9 +589,9 @@ app's Application is healthy:
   `sabnzbd.media.svc.cluster.local:8080`.
 - **Bazarr** - connect Bazarr to Sonarr and Radarr, through Bazarr's own
   Settings page.
-- **Jellyseerr** - connect Jellyseerr to Sonarr and Radarr, and to
+- **Seerr** - connect Seerr to Sonarr and Radarr, and to
   Jellyfin on the Mac Mini (point it at the SMB library share).
-  Jellyseerr's first-run flow needs an interactive admin account (Plex
+  Seerr's first-run flow needs an interactive admin account (Plex
   OAuth or a local user), so a scripted bootstrap could never cover this
   app.
 
@@ -608,7 +608,7 @@ way.
 ### SSO: authentik forward-auth (domain level)
 
 `sonarr`, `radarr`, `prowlarr`, `bazarr`, `qbittorrent`, and `sabnzbd` sit
-behind authentik SSO - `jellyseerr` deliberately doesn't, since it's the
+behind authentik SSO - `seerr` deliberately doesn't, since it's the
 app household members use directly. None of these apps support OIDC/SAML
 natively, so this uses authentik's **forward-auth (domain level)** proxy
 mode instead of the OAuth2 pattern [SSO / authentik](#sso--authentik)
