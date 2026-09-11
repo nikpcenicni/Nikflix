@@ -1,0 +1,40 @@
+# Homepage (gethomepage/homepage) - admin overview dashboard for every app
+# running in this cluster, grouped into logical sections with live status
+# widgets. Values in ../values/homepage-values.yaml. Same two-source
+# bjw-s/app-template shape as profilarr/sonarr/radarr/etc - see
+# ../../README.md's "Homepage" section.
+#
+# Sits behind the shared media-authentik-forward-auth Middleware (see
+# ../manifests/media-forward-auth/) even though this Application isn't
+# part of the media namespace - that Middleware is deliberately
+# domain-level/cross-namespace (one authentik login covers every
+# *.lab.pcenicni.dev host), see ../../README.md's "SSO: authentik
+# forward-auth (domain level)" section. This dashboard surfaces
+# status/tokens for every other admin tool in the cluster, so it must not
+# be open.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: homepage
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/homepage-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: homepage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,317 @@
+# Homepage (gethomepage/homepage) - values for the bjw-s/app-template
+# Helm chart. See ../apps/homepage.yaml.
+#
+# Homepage itself has no Helm chart of its own (same reason the media
+# stack uses app-template - see docs/architecture/media-stack.md), so this
+# follows the same pattern as sonarr/radarr/prowlarr/etc: one container,
+# its config files supplied as a ConfigMap this file defines inline
+# (configMaps.homepage-config below), mounted file-by-file via subPath so
+# the rest of /app/config stays part of the container's own writable
+# filesystem layer instead of the whole directory going read-only.
+#
+# Every service tile's live-status widget authenticates with a real
+# per-app API key/token, sourced from the homepage-widget-tokens SopsSecret
+# (../manifests/secrets/homepage-widget-tokens.yaml) via envFrom below and
+# referenced from services.yaml through Homepage's {{HOMEPAGE_VAR_*}}
+# templated-variable substitution
+# (https://gethomepage.dev/configs/service-widgets/) - this keeps the
+# ConfigMap itself, and this file, free of real secret values.
+#
+# Two tiles (ArgoCD, qBittorrent) have no widget - see services.yaml's
+# comments for exactly why and what a human needs to do to upgrade them
+# later.
+#
+# Enrolled in Ballast's full measure+apply+resize lifecycle (see
+# ../apps/ballast.yaml) - a convenience dashboard, not cluster-critical
+# infra.
+defaultPodOptions:
+  labels:
+    ballast.tightlinesoftware.com/mode: resize
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/gethomepage/homepage
+          tag: latest
+        env:
+          TZ: "Etc/UTC"
+          # Homepage validates the incoming Host header against this list
+          # (required since Homepage's CSRF/host-header protection was
+          # added) - without it every request through Traefik's ingress
+          # 500s. Comma-separated, no scheme.
+          HOMEPAGE_ALLOWED_HOSTS: "home.lab.pcenicni.dev"
+        envFrom:
+          # HOMEPAGE_VAR_* keys, decrypted from the homepage-widget-tokens
+          # SopsSecret - see ../manifests/secrets/homepage-widget-tokens.yaml
+          # and services.yaml's widget entries below.
+          - secretRef:
+              name: homepage-widget-tokens
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 3000
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      # Cross-namespace reference to the media namespace's forward-auth
+      # Middleware - deliberately domain-level, see
+      # ../../README.md's "SSO: authentik forward-auth (domain level)"
+      # section and ../apps/homepage.yaml's comment for why an admin
+      # overview dashboard must sit behind this too.
+      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd
+    hosts:
+      - host: home.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["home.lab.pcenicni.dev"]
+        secretName: home-tls
+
+persistence:
+  # One ConfigMap volume, mounted four times via subPath so each file
+  # lands at its expected path under /app/config without making the whole
+  # directory read-only (Homepage writes its own cache/log state
+  # elsewhere under /app/config at runtime).
+  config:
+    enabled: true
+    type: configMap
+    identifier: homepage-config
+    globalMounts:
+      - path: /app/config/settings.yaml
+        subPath: settings.yaml
+        readOnly: true
+      - path: /app/config/services.yaml
+        subPath: services.yaml
+        readOnly: true
+      - path: /app/config/widgets.yaml
+        subPath: widgets.yaml
+        readOnly: true
+      - path: /app/config/bookmarks.yaml
+        subPath: bookmarks.yaml
+        readOnly: true
+
+configMaps:
+  homepage-config:
+    data:
+      # Global look/layout. layout: groups must list every group used in
+      # services.yaml below, in display order.
+      settings.yaml: |
+        title: Nikflix Homelab
+        theme: dark
+        color: slate
+        headerStyle: clean
+        statusStyle: dot
+        hideVersion: true
+        layout:
+          Media Requests:
+            style: row
+            columns: 1
+          Arr Stack:
+            style: row
+            columns: 3
+          Downloads:
+            style: row
+            columns: 2
+          Monitoring:
+            style: row
+            columns: 2
+          Platform:
+            style: row
+            columns: 3
+
+      # Every tile below is grouped into one of settings.yaml's layout
+      # sections. See ../../README.md's Applications table for what each
+      # app is - this file only covers presentation/status wiring.
+      #
+      # Widget auth fields use Homepage's {{HOMEPAGE_VAR_*}} substitution
+      # (https://gethomepage.dev/configs/service-widgets/#using-docker-secrets),
+      # resolved from this pod's own environment (envFrom above) - never a
+      # literal key in this ConfigMap.
+      #
+      # Every "url"/host used for a widget or siteMonitor check below is
+      # the app's in-cluster Service address, not its public
+      # *.lab.pcenicni.dev hostname: the coredns Application only patches
+      # in-cluster resolution for auth/argocd/grafana/headlamp/che (see
+      # ../../README.md's "SSO / authentik" section) - every other
+      # *.lab.pcenicni.dev host only resolves from the pi-hole wildcard on
+      # the LAN, not from inside the cluster, so a pod-side check against
+      # the public hostname would just fail DNS resolution. "href" below
+      # (what a human clicks) still always uses the public hostname.
+      services.yaml: |
+        - Media Requests:
+            - Seerr:
+                icon: overseerr.png
+                href: https://seerr.lab.pcenicni.dev
+                description: Media request portal
+                widget:
+                  type: overseerr
+                  url: http://seerr.media.svc.cluster.local:5055
+                  key: "{{ "{{HOMEPAGE_VAR_SEERR_API_KEY}}" }}"
+
+        - Arr Stack:
+            - Sonarr:
+                icon: sonarr.png
+                href: https://sonarr.lab.pcenicni.dev
+                description: TV automation
+                widget:
+                  type: sonarr
+                  url: http://sonarr.media.svc.cluster.local:8989
+                  key: "{{ "{{HOMEPAGE_VAR_SONARR_API_KEY}}" }}"
+            - Radarr:
+                icon: radarr.png
+                href: https://radarr.lab.pcenicni.dev
+                description: Movie automation
+                widget:
+                  type: radarr
+                  url: http://radarr.media.svc.cluster.local:7878
+                  key: "{{ "{{HOMEPAGE_VAR_RADARR_API_KEY}}" }}"
+            - Prowlarr:
+                icon: prowlarr.png
+                href: https://prowlarr.lab.pcenicni.dev
+                description: Indexer manager
+                widget:
+                  type: prowlarr
+                  url: http://prowlarr.media.svc.cluster.local:9696
+                  key: "{{ "{{HOMEPAGE_VAR_PROWLARR_API_KEY}}" }}"
+            - Bazarr:
+                icon: bazarr.png
+                href: https://bazarr.lab.pcenicni.dev
+                description: Subtitle automation
+                widget:
+                  type: bazarr
+                  url: http://bazarr.media.svc.cluster.local:6767
+                  key: "{{ "{{HOMEPAGE_VAR_BAZARR_API_KEY}}" }}"
+            - Profilarr:
+                icon: mdi-file-cog-outline
+                href: https://profilarr.lab.pcenicni.dev
+                description: Custom formats & quality profiles
+                # No Homepage widget type exists for Profilarr (niche app,
+                # not in gethomepage.dev/widgets/) - generic reachability
+                # check instead, so the tile still shows a live indicator.
+                siteMonitor: http://profilarr.media.svc.cluster.local:6868
+
+        - Downloads:
+            - qBittorrent:
+                icon: qbittorrent.png
+                href: https://qbittorrent.lab.pcenicni.dev
+                description: Torrent client (via PIA VPN)
+                # qBittorrent's widget needs its WebUI username/password,
+                # not an API key. Its WebUI password was already changed
+                # from the chart default at some point and isn't
+                # recoverable from the PBKDF2 hash stored in its config -
+                # ping-only until a human sets HOMEPAGE_VAR_QBITTORRENT_USERNAME
+                # / HOMEPAGE_VAR_QBITTORRENT_PASSWORD in
+                # ../manifests/secrets/homepage-widget-tokens.yaml (`sops
+                # argocd/dev/manifests/secrets/homepage-widget-tokens.yaml`)
+                # and swapping this siteMonitor line for:
+                #   widget:
+                #     type: qbittorrent
+                #     url: http://qbittorrent.media.svc.cluster.local:8080
+                #     username: "{{ "{{HOMEPAGE_VAR_QBITTORRENT_USERNAME}}" }}"
+                #     password: "{{ "{{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}" }}"
+                siteMonitor: http://qbittorrent.media.svc.cluster.local:8080
+            - SABnzbd:
+                icon: sabnzbd.png
+                href: https://sabnzbd.lab.pcenicni.dev
+                description: Usenet client
+                widget:
+                  type: sabnzbd
+                  url: http://sabnzbd.media.svc.cluster.local:8080
+                  key: "{{ "{{HOMEPAGE_VAR_SABNZBD_API_KEY}}" }}"
+
+        - Monitoring:
+            - Grafana:
+                icon: grafana.png
+                href: https://grafana.lab.pcenicni.dev
+                description: Dashboards
+                widget:
+                  type: grafana
+                  url: http://kube-prometheus-stack-grafana.monitoring.svc.cluster.local:80
+                  key: "{{ "{{HOMEPAGE_VAR_GRAFANA_API_KEY}}" }}"
+            - Prometheus:
+                icon: prometheus.png
+                href: https://grafana.lab.pcenicni.dev/explore
+                description: Metrics (kube-prometheus-stack) - no separate public UI, opens Grafana Explore
+                widget:
+                  type: prometheus
+                  url: http://prometheus-operated.monitoring.svc.cluster.local:9090
+
+        - Platform:
+            - ArgoCD:
+                icon: argo-cd.png
+                href: https://argocd.lab.pcenicni.dev
+                description: GitOps - this whole cluster's config
+                # No API token: ArgoCD's local admin account's password is
+                # unknown (login here is OIDC-only via authentik, see
+                # ../../README.md's "SSO / authentik" section, and the
+                # built-in admin account's bootstrap password was never
+                # recorded in this repo). Generate one by hand to upgrade
+                # this tile: `argocd account generate-token --account
+                # <your-account>` (from an authenticated `argocd` CLI
+                # session), then add HOMEPAGE_VAR_ARGOCD_API_KEY to
+                # ../manifests/secrets/homepage-widget-tokens.yaml and swap
+                # this siteMonitor line for:
+                #   widget:
+                #     type: argocd
+                #     url: http://argocd-server.argocd.svc.cluster.local:80
+                #     key: "{{ "{{HOMEPAGE_VAR_ARGOCD_API_KEY}}" }}"
+                siteMonitor: http://argocd-server.argocd.svc.cluster.local:80
+            - authentik:
+                icon: authentik.png
+                href: https://auth.lab.pcenicni.dev
+                description: Identity provider (SSO)
+                widget:
+                  type: authentik
+                  url: http://authentik-server.authentik.svc.cluster.local:80
+                  key: "{{ "{{HOMEPAGE_VAR_AUTHENTIK_API_KEY}}" }}"
+            - Headlamp:
+                icon: kubernetes.png
+                href: https://headlamp.lab.pcenicni.dev
+                description: Kubernetes dashboard
+                # No Homepage widget type for Headlamp - generic
+                # reachability check instead.
+                siteMonitor: http://headlamp.headlamp.svc.cluster.local:80
+            - Eclipse Che:
+                icon: eclipse-che.png
+                href: https://che.lab.pcenicni.dev
+                description: Cloud development environments
+                # No Homepage widget type for Eclipse Che - generic
+                # reachability check instead.
+                siteMonitor: http://che-dashboard.eclipse-che.svc.cluster.local:8080
+
+      # Header info widgets - no app-specific credentials, pure convenience.
+      widgets.yaml: |
+        - search:
+            provider: duckduckgo
+            target: _blank
+        - datetime:
+            text_size: xl
+            format:
+              dateStyle: long
+              timeStyle: short
+
+      # A couple of static links that aren't cluster Applications
+      # themselves, so they don't belong in services.yaml.
+      bookmarks.yaml: |
+        - Repository:
+            - Nikflix (GitOps repo):
+                - abbr: GH
+                  href: https://github.com/nikpcenicni/Nikflix
