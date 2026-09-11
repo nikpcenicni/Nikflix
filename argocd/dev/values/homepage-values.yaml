@@ -85,8 +85,11 @@ ingress:
       # Middleware - deliberately domain-level, see
       # ../../README.md's "SSO: authentik forward-auth (domain level)"
       # section and ../apps/homepage.yaml's comment for why an admin
-      # overview dashboard must sit behind this too.
-      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd
+      # overview dashboard must sit behind this too. Chained with
+      # homepage-no-cache (rawResources below) - Traefik applies
+      # middlewares left to right, order doesn't matter between these two
+      # since they touch different things (auth vs. response headers).
+      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd,homepage-no-cache@kubernetescrd
     hosts:
       - host: dash.lab.pcenicni.dev
         paths:
@@ -158,6 +161,35 @@ persistence:
       - path: /app/public/images/nature-6.jpg
         subPath: nature-6.jpg
         readOnly: true
+
+# Homepage's own Next.js layer serves its main page with
+# `Cache-Control: s-maxage=31536000` (one year - confirmed live via
+# curl against the pod directly, consistent x-nextjs-cache: HIT on
+# repeat requests). s-maxage technically only binds shared/CDN caches,
+# but this dashboard's whole point is live status - not worth
+# depending on every client's cache implementation interpreting that
+# correctly. iOS Safari in particular, once this page is added to the
+# home screen (the site.webmanifest/apple-touch-icon above exist for
+# exactly that), runs in a chromeless "standalone" mode with no
+# pull-to-refresh affordance, making a page that a client actually
+# does cache appear permanently stuck. This Traefik Middleware
+# overrides the response header on the way out instead of fighting
+# Homepage's own Next.js internals. Referenced from ingress.main's
+# router.middlewares above via forceRename (the chart would otherwise
+# prefix this object's name with the release name, like it does for
+# configMaps).
+rawResources:
+  noCacheMiddleware:
+    forceRename: homepage-no-cache
+    manifest:
+      apiVersion: traefik.io/v1alpha1
+      kind: Middleware
+      metadata:
+        name: homepage-no-cache
+      spec:
+        headers:
+          customResponseHeaders:
+            Cache-Control: "no-cache, no-store, must-revalidate"
 
 configMaps:
   homepage-config:
