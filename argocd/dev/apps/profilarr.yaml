@@ -1,0 +1,29 @@
+# Profilarr - configuration management for Sonarr/Radarr custom formats
+# and quality profiles (Dictionarry-Hub/profilarr). Values in
+# ../values/profilarr-values.yaml. See docs/architecture/media-stack.md#components.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: profilarr
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/profilarr-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: media
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
