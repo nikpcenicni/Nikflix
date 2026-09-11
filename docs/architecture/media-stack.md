@@ -26,6 +26,7 @@ manages these workloads through GitOps.
 | qBittorrent | Torrent download client | Talos | **Yes** — routed through a VPN sidecar (e.g. gluetun) using **PIA** |
 | SABnzbd | Usenet download client | Talos | No — provider-based, not peer-to-peer, no swarm IP exposure |
 | Bazarr | Subtitle automation — watches the Sonarr/Radarr libraries, fetches matching subtitles | Talos | No |
+| Profilarr | Configuration management for Sonarr/Radarr custom formats and quality profiles | Talos | No |
 | Jellyfin | Media server — transcodes and streams the finished library to clients | **Mac Mini** | No |
 
 Only qBittorrent needs a Virtual Private Network (VPN). Torrent swarms

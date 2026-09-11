@@ -35,6 +35,7 @@ argocd/
 │   │   ├── loki.yaml
 │   │   ├── metallb.yaml
 │   │   ├── metrics-server.yaml
+│   │   ├── profilarr.yaml
 │   │   ├── prometheus-pve-exporter.yaml
 │   │   ├── prowlarr.yaml
 │   │   ├── qbittorrent.yaml
@@ -66,6 +67,7 @@ argocd/
 │   │   ├── loki-values.yaml
 │   │   ├── metallb-values.yaml
 │   │   ├── metrics-server-values.yaml
+│   │   ├── profilarr-values.yaml
 │   │   ├── prometheus-pve-exporter-values.yaml
 │   │   ├── prowlarr-values.yaml
 │   │   ├── qbittorrent-values.yaml
@@ -128,7 +130,7 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). The server and worker pods each expose their own `:9300` metrics endpoint; `server.metrics`/`worker.metrics` (chart-native `enabled`/`serviceMonitor.enabled`, not raw manifests) turn on the Service + ServiceMonitor pair for each, feeding a Grafana authentik dashboard. Depends on `sops-secrets-operator` and `secrets` having synced first. |
-| `ballast` | Helm chart `ballast` from `ghcr.io/tight-line/charts` (OCI), values in `dev/values/ballast-values.yaml` | `ballast` | [Ballast](https://github.com/Tight-Line/ballast) - auto-rightsizing operator. Measures real CPU/memory/ephemeral-storage usage per workload (via `metrics-server` and the kubelet Summary API) and applies rightsized requests/limits, either at admission or on already-running pods through the in-place pod resize API. This Application installs the operator, its CRDs (`WorkloadProfile`, `ClusterResourcePolicy`/`ResourcePolicy`, `MetricsSource`, `BallastConfig`), and its cert-manager-backed admission webhook - it is opt-in per workload via a `ballast.tightlinesoftware.com/mode` label on the workload's pod template (set through `defaultPodOptions.labels` in that app-template Application's own values file, not here). The full media stack (`bazarr`, `seerr`, `prowlarr`, `qbittorrent`, `radarr`, `sabnzbd`, `sonarr`) is enrolled at `mode: resize`, the full measure+apply+resize lifecycle - convenience apps, not cluster-critical infra. Nothing outside the media stack is enrolled. Bundles its own Valkey instance (PVC-backed, `local-path`) for usage history. Depends on `cert-manager` having synced first (the chart's own self-signed Issuer/Certificate for its webhook's serving certificate) and `metrics-server` having synced first (its default `MetricsSource` needs the Metrics API to actually read from). |
+| `ballast` | Helm chart `ballast` from `ghcr.io/tight-line/charts` (OCI), values in `dev/values/ballast-values.yaml` | `ballast` | [Ballast](https://github.com/Tight-Line/ballast) - auto-rightsizing operator. Measures real CPU/memory/ephemeral-storage usage per workload (via `metrics-server` and the kubelet Summary API) and applies rightsized requests/limits, either at admission or on already-running pods through the in-place pod resize API. This Application installs the operator, its CRDs (`WorkloadProfile`, `ClusterResourcePolicy`/`ResourcePolicy`, `MetricsSource`, `BallastConfig`), and its cert-manager-backed admission webhook - it is opt-in per workload via a `ballast.tightlinesoftware.com/mode` label on the workload's pod template (set through `defaultPodOptions.labels` in that app-template Application's own values file, not here). The full media stack (`bazarr`, `profilarr`, `seerr`, `prowlarr`, `qbittorrent`, `radarr`, `sabnzbd`, `sonarr`) is enrolled at `mode: resize`, the full measure+apply+resize lifecycle - convenience apps, not cluster-critical infra. Nothing outside the media stack is enrolled. Bundles its own Valkey instance (PVC-backed, `local-path`) for usage history. Depends on `cert-manager` having synced first (the chart's own self-signed Issuer/Certificate for its webhook's serving certificate) and `metrics-server` having synced first (its default `MetricsSource` needs the Metrics API to actually read from). |
 | `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
@@ -137,6 +139,7 @@ groups:
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
 | `metrics-server` | Helm chart `metrics-server` from the official metrics-server chart repository, values in `dev/values/metrics-server-values.yaml` | `kube-system` | Kubernetes Metrics API (`kubectl top nodes`/`kubectl top pods`). Runs with `--kubelet-insecure-tls` - confirmed live as necessary: Talos's kubelet serving certs are valid but only SAN the node's hostname, not its IP, so scraping via `InternalIP` (this chart's default preferred address type) fails certificate verification otherwise. This only disables metrics-server's outbound verification of each kubelet's own cert; the Metrics API it serves to callers (`kubectl top`, Ballast, HPA) still goes over its own generated serving certificate. `ballast` depends on this for its default `kubernetesMetrics` `MetricsSource`. |
+| `profilarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/profilarr-values.yaml` | `media` | Configuration management for Sonarr/Radarr custom formats and quality profiles ([Dictionarry-Hub/profilarr](https://github.com/Dictionarry-Hub/profilarr)). Two containers in the pod: `main` (the web UI/API, port 6868) and `parser` (custom format/quality profile testing, reached over `localhost` rather than a Docker Compose service name). `AUTH=off` - sits behind the shared forward-auth middleware like the rest of the admin-tool apps, not Profilarr's own native OIDC support. See [Media stack](#media-stack). |
 | `prometheus-pve-exporter` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prometheus-pve-exporter-values.yaml` | `monitoring` | Scrapes the separate "noble" Proxmox VE cluster (3 nodes, API at `192.168.10.10:8006`, reachable from this cluster's pods) over its API using a read-only `monitoring@pve`/`PVEAuditor` token, so kube-prometheus-stack's Prometheus can feed a Grafana "Proxmox via Prometheus" dashboard. Mounts the `pve-exporter-config` SopsSecret as `/etc/pve.yml`. Not a plain `/metrics` scrape - it's a blackbox-style multi-target exporter, so its values file's `serviceMonitor` block (native to this chart version, no raw manifest needed) hits `/pve?target=192.168.10.10` and relabels the scraped series' `instance` label to the actual Proxmox host. Depends on the `pve-exporter-config` SopsSecret and `sops-secrets-operator` having synced first. |
 | `prowlarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prowlarr-values.yaml` | `media` | Indexer manager - one place to configure trackers/indexers, pushed out to Sonarr, Radarr, and the downloaders. See [Media stack](#media-stack). |
 | `qbittorrent` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/qbittorrent-values.yaml` | `media` | Torrent download client, routed through a PIA VPN via a gluetun sidecar container in the same pod. See [Media stack](#media-stack). Depends on the `qbittorrent-vpn-credentials` SopsSecret and `sops-secrets-operator` having synced first. |
@@ -491,11 +494,11 @@ diff against) still applies whenever it comes back.
 
 ## Media stack
 
-`seerr`, `sonarr`, `radarr`, `prowlarr`, `qbittorrent`, `sabnzbd`, and
-`bazarr` (all in the `media` namespace) are the Talos-side half of
-[docs/architecture/media-stack.md](../docs/architecture/media-stack.md).
+`seerr`, `sonarr`, `radarr`, `prowlarr`, `qbittorrent`, `sabnzbd`,
+`bazarr`, and `profilarr` (all in the `media` namespace) are the Talos-side
+half of [docs/architecture/media-stack.md](../docs/architecture/media-stack.md).
 Jellyfin itself runs on a Mac Mini outside the cluster and outside this
-GitOps tree entirely - see that doc for why. All seven Applications use the
+GitOps tree entirely - see that doc for why. All eight Applications use the
 generic [bjw-s/app-template](https://github.com/bjw-s-labs/helm-charts)
 chart, since none of these images ship an official Helm chart.
 
@@ -607,8 +610,8 @@ way.
 
 ### SSO: authentik forward-auth (domain level)
 
-`sonarr`, `radarr`, `prowlarr`, `bazarr`, `qbittorrent`, and `sabnzbd` sit
-behind authentik SSO - `seerr` deliberately doesn't, since it's the
+`sonarr`, `radarr`, `prowlarr`, `bazarr`, `qbittorrent`, `sabnzbd`, and
+`profilarr` sit behind authentik SSO - `seerr` deliberately doesn't, since it's the
 app household members use directly. None of these apps support OIDC/SAML
 natively, so this uses authentik's **forward-auth (domain level)** proxy
 mode instead of the OAuth2 pattern [SSO / authentik](#sso--authentik)

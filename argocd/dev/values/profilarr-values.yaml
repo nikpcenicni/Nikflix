@@ -1,0 +1,92 @@
+# Profilarr - values for the bjw-s/app-template Helm chart. See
+# ../apps/profilarr.yaml. Manages Sonarr/Radarr custom formats and quality
+# profiles - no NAS/media library mount needed, only its own config and
+# Sonarr/Radarr's APIs (configured through Profilarr's own web UI, like
+# every other arr app's first-time setup in this repo). See
+# docs/architecture/media-stack.md#components.
+#
+# Two containers share this pod (automatic in Kubernetes - no special
+# sidecar config needed): the parser sidecar is only used for custom
+# format/quality profile testing, and Profilarr reaches it over localhost
+# rather than a Docker Compose service name since they're in the same pod.
+#
+# AUTH=off: sits behind the shared media-authentik-forward-auth middleware
+# below instead of Profilarr's own native OIDC support (AUTH=oidc) - it's
+# an admin config tool like sonarr/radarr/prowlarr/bazarr/qbittorrent/
+# sabnzbd, not a user-facing app like seerr, so the same one-login
+# cookie_domain forward-auth those apps use already covers it - see
+# argocd/README.md's "SSO: authentik forward-auth (domain level)" section.
+#
+# Enrolled in Ballast's full measure+apply+resize lifecycle (see
+# ../apps/ballast.yaml) - a media-stack convenience app, not
+# cluster-critical infra, so safe to let Ballast rightsize live. Both
+# containers are measured/resized independently.
+defaultPodOptions:
+  labels:
+    ballast.tightlinesoftware.com/mode: resize
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/dictionarry-hub/profilarr
+          tag: latest
+        env:
+          TZ: "Etc/UTC"
+          AUTH: "off"
+          PARSER_HOST: "localhost"
+          PARSER_PORT: "5000"
+        resources:
+          requests:
+            cpu: 25m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+      parser:
+        image:
+          repository: ghcr.io/dictionarry-hub/profilarr-parser
+          tag: latest
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            memory: 256Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 6868
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd
+    hosts:
+      - host: profilarr.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["profilarr.lab.pcenicni.dev"]
+        secretName: profilarr-tls
+
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    advancedMounts:
+      main:
+        main:
+          - path: /config
