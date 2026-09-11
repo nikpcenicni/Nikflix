@@ -41,7 +41,7 @@ controllers:
           # (required since Homepage's CSRF/host-header protection was
           # added) - without it every request through Traefik's ingress
           # 500s. Comma-separated, no scheme.
-          HOMEPAGE_ALLOWED_HOSTS: "home.lab.pcenicni.dev"
+          HOMEPAGE_ALLOWED_HOSTS: "lab.pcenicni.dev"
         envFrom:
           # HOMEPAGE_VAR_* keys, decrypted from the homepage-widget-tokens
           # SopsSecret - see ../manifests/secrets/homepage-widget-tokens.yaml
@@ -74,7 +74,7 @@ ingress:
       # overview dashboard must sit behind this too.
       traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd
     hosts:
-      - host: home.lab.pcenicni.dev
+      - host: lab.pcenicni.dev
         paths:
           - path: /
             pathType: Prefix
@@ -82,8 +82,8 @@ ingress:
               identifier: main
               port: http
     tls:
-      - hosts: ["home.lab.pcenicni.dev"]
-        secretName: home-tls
+      - hosts: ["lab.pcenicni.dev"]
+        secretName: lab-tls
 
 persistence:
   # One ConfigMap volume, mounted four times via subPath so each file
