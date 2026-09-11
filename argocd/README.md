@@ -31,6 +31,7 @@ argocd/
 │   │   ├── cert-manager.yaml
 │   │   ├── eclipse-che.yaml
 │   │   ├── headlamp.yaml
+│   │   ├── homepage.yaml
 │   │   ├── kube-prometheus-stack.yaml
 │   │   ├── loki.yaml
 │   │   ├── metallb.yaml
@@ -63,6 +64,7 @@ argocd/
 │   │   ├── bazarr-values.yaml
 │   │   ├── cert-manager-values.yaml
 │   │   ├── headlamp-values.yaml
+│   │   ├── homepage-values.yaml
 │   │   ├── kube-prometheus-stack-values.yaml
 │   │   ├── loki-values.yaml
 │   │   ├── metallb-values.yaml
@@ -135,6 +137,7 @@ groups:
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
 | `headlamp` | Helm chart `headlamp` from the Headlamp chart repository, values in `dev/values/headlamp-values.yaml` | `headlamp` | Web-based Kubernetes dashboard. Brought under GitOps at the chart version already running (`headlamp-0.43.0`). SSO-wired against authentik - see [SSO / authentik](#sso--authentik) and [Cluster-wide OIDC / RBAC](#cluster-wide-oidc--rbac). Depends on the `headlamp-oidc` SopsSecret and `sops-secrets-operator` having synced first. |
+| `homepage` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/homepage-values.yaml` | `homepage` | [Homepage](https://gethomepage.dev) - admin overview dashboard for every app in this cluster, grouped into sections (Media Requests, Arr Stack, Downloads, Monitoring, Platform) with live per-tile status widgets - see [Homepage](#homepage). Serves `home.lab.pcenicni.dev`, behind the same domain-level `media-authentik-forward-auth` Middleware the media stack uses (cross-namespace reference), since it surfaces status/tokens for every other admin tool. Depends on `authentik-outpost` having synced first, same as the media stack. |
 | `kube-prometheus-stack` | Helm chart `kube-prometheus-stack` from the Prometheus Community chart repository, values in `dev/values/kube-prometheus-stack-values.yaml` | `monitoring` | Metrics and dashboards. The chart installs Prometheus and Grafana. The dev cluster's values file disables Alertmanager and configures Grafana's `auth.generic_oauth` against authentik, mapping the `Grafana Admins`/`Grafana Editors`/`Grafana Viewers` authentik groups to Grafana's Admin/Editor/Viewer org roles. Syncs with `ServerSideApply=true` - the prometheus-operator CRDs this chart installs are too large for client-side apply's `last-applied-configuration` annotation (hits Kubernetes' 262144-byte annotation limit). |
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
@@ -662,6 +665,107 @@ instead for this specific case - see the comment on the Outpost entry in
 `dev/values/authentik-values.yaml`. The Outpost serializer also requires
 an explicit `config.authentik_host` despite the model having a default -
 omitting it fails with a plain "This field is required."
+
+## Homepage
+
+`homepage` deploys [gethomepage/homepage](https://gethomepage.dev), an
+admin overview dashboard for this cluster - `home.lab.pcenicni.dev`. Same
+two-source `bjw-s/app-template` shape as the media stack (Homepage has no
+Helm chart of its own), values in `dev/values/homepage-values.yaml`. Sits
+behind `media-authentik-forward-auth` - the same domain-level SSO
+Middleware the media stack uses (see [SSO: authentik forward-auth (domain
+level)](#sso-authentik-forward-auth-domain-level) above), referenced
+cross-namespace from the `homepage` namespace. Unlike `seerr`, this
+dashboard is deliberately gated: it surfaces status and, for some tiles,
+live counts/metadata for every other admin tool in the cluster. Depends on
+`authentik-outpost` having synced first, for that Middleware's outpost
+endpoint to exist.
+
+### Config files
+
+Homepage has no database - its entire configuration is four YAML files it
+reads from `/app/config/`. `dev/values/homepage-values.yaml` defines all
+four inline, under `configMaps.homepage-config.data`, and mounts each one
+individually via a `subPath` volumeMount instead of mounting the whole
+ConfigMap over `/app/config` - this keeps the rest of that directory part
+of the container's own writable filesystem layer, matching how Homepage
+expects to run:
+
+- **`settings.yaml`** - title, theme, and the `layout` block that defines
+  each section (group) shown on the dashboard and its column count.
+- **`services.yaml`** - one entry per section: Media Requests, Arr Stack,
+  Downloads, Monitoring, Platform. Every tile's `href` is the app's public
+  `*.lab.pcenicni.dev` hostname (what a human clicks), but every tile's
+  `widget`/`siteMonitor` check target is the app's **in-cluster Service
+  address** instead (what the Homepage pod itself queries) - the
+  `coredns` Application (see [SSO / authentik](#sso--authentik) above)
+  only patches in-cluster resolution for `auth`/`argocd`/`grafana`/
+  `headlamp`/`che`, so every other `*.lab.pcenicni.dev` host doesn't
+  resolve from inside the cluster at all, only from the pi-hole wildcard
+  on the LAN.
+- **`widgets.yaml`** - the header info widgets (search bar, date/time) -
+  no credentials, pure convenience.
+- **`bookmarks.yaml`** - static links that aren't cluster Applications
+  (currently just this repository on GitHub).
+
+### Live status widgets and their credentials
+
+`homepage-widget-tokens` (`dev/manifests/secrets/homepage-widget-tokens.yaml`,
+SOPS-encrypted - see [Secrets management](#secrets-management)) holds one
+`HOMEPAGE_VAR_*` key per app with a real, working Homepage widget type,
+loaded into the pod's environment via `envFrom` and referenced from
+`services.yaml` through Homepage's own `{{HOMEPAGE_VAR_*}}` templated-variable
+substitution (https://gethomepage.dev/configs/service-widgets/) - never a
+literal key in the ConfigMap. Values.yaml has to double-escape these as
+`{{ "{{HOMEPAGE_VAR_X}}" }}` in the source, since the surrounding
+`configMaps.*.data` content is itself passed through Helm's own `tpl`
+function first - without the escape, Helm tries to evaluate
+`{{HOMEPAGE_VAR_X}}` as a template function call and fails the render.
+
+Sonarr, Radarr, Prowlarr, Bazarr, SABnzbd, and Seerr (via Homepage's
+`overseerr` widget type - Seerr is a rename of the Overseerr-API-compatible
+jellyseerr project, see the `seerr` row above) use each app's own API key,
+read directly out of its running config (`config.xml`'s `<ApiKey>`,
+`sabnzbd.ini`'s `api_key`, `settings.json`'s `main.apiKey`). Grafana and
+authentik use a token minted specifically for this dashboard instead of an
+existing credential:
+
+- **Grafana** - a new Grafana service account (`homepage`, Viewer role)
+  and token, created through Grafana's own HTTP API using the existing
+  `grafana-admin-credentials` Secret (`kube-prometheus-stack`'s
+  `admin.existingSecret`).
+- **authentik** - a new internal service-account user (`homepage`, no
+  staff/superuser access) and API token, created through `ak shell` the
+  same way [SSO: authentik forward-auth (domain
+  level)](#sso-authentik-forward-auth-domain-level)'s "Bootstrapping the
+  outpost token" creates the media outpost's token. If the authentik
+  tile's data looks limited because of this account's permission level,
+  grant it more access by hand in the authentik UI (Directory -> Users ->
+  `homepage`) instead of re-running this step.
+- **Prometheus** - no credential at all; `kube-prometheus-stack`'s
+  Prometheus has no auth in front of its in-cluster Service.
+
+Two tiles have no real widget, and fall back to Homepage's `siteMonitor`
+field (a generic reachability check, so the tile still shows a live
+online/offline indicator) - see `homepage-values.yaml`'s comments on each
+for the exact steps to upgrade them once a human supplies the missing
+credential:
+
+- **ArgoCD** - no known password for the local `admin` account (login here
+  is OIDC-only via authentik, see [SSO / authentik](#sso--authentik)).
+  Generate a token by hand with `argocd account generate-token` from an
+  authenticated `argocd` CLI session, then add it as
+  `HOMEPAGE_VAR_ARGOCD_API_KEY`.
+- **qBittorrent** - its widget needs the WebUI username/password (not an
+  API key), and its WebUI password was already changed from the chart
+  default at some point - not recoverable from the PBKDF2 hash stored in
+  its config. Set a known password by hand through qBittorrent's WebUI,
+  then add `HOMEPAGE_VAR_QBITTORRENT_USERNAME`/
+  `HOMEPAGE_VAR_QBITTORRENT_PASSWORD`.
+
+Profilarr, Headlamp, and Eclipse Che also use the `siteMonitor` fallback,
+for a different reason: none of them have a Homepage widget type at all
+(https://gethomepage.dev/widgets/) rather than a missing credential.
 
 ## Configuring the authentik admin account
 

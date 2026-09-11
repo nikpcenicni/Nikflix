@@ -29,6 +29,11 @@ manages these workloads through GitOps.
 | Profilarr | Configuration management for Sonarr/Radarr custom formats and quality profiles | Talos | No |
 | Jellyfin | Media server — transcodes and streams the finished library to clients | **Mac Mini** | No |
 
+[Homepage](../../argocd/README.md#homepage) gives every app in this table
+its own status tile, alongside the rest of the cluster's admin tools - it
+is a cluster-wide dashboard, not a media-stack component, so it isn't
+covered further here.
+
 Only qBittorrent needs a Virtual Private Network (VPN). Torrent swarms
 expose each participant's IP address to every peer; Usenet does not
 expose IP addresses this way. Routing only that one client's egress

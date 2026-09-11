@@ -234,6 +234,7 @@ described above.
 |-----|---------|------------------|-----------------|
 | ArgoCD | GitOps continuous delivery — reconciles cluster state from a git repo, and manages every other app in this table (including itself, via the app-of-apps pattern) | Yes (UI) | No — state lives in etcd + git |
 | Headlamp | Web-based Kubernetes dashboard for ad-hoc inspection/debugging, RBAC-scoped | Yes (UI) | No |
+| Homepage | Admin overview dashboard - one page, grouped tiles with live status for every app in this table plus the media stack | Yes (UI) | No — config is a ConfigMap, not persisted state |
 | Traefik | Ingress controller — terminates TLS (via cert-manager certs) and routes HTTP(S) to in-cluster UIs | n/a — it *is* the entry point | No |
 | cert-manager | Issues and renews TLS certificates used by Traefik | No (no UI) | No |
 | Authentik | Single sign-on (SSO) and identity provider for the platform UIs | Yes (UI) | Yes — PostgreSQL data |
