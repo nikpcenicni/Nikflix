@@ -21,6 +21,17 @@
 # comments for exactly why and what a human needs to do to upgrade them
 # later.
 #
+# custom.js's Unsplash Access Key (random-nature-photo background) goes
+# through the homepage-widget-tokens SopsSecret and {{HOMEPAGE_VAR_*}}
+# substitution below, same as every widget key - even though the value
+# must ultimately reach the viewer's own browser (it drives a client-side
+# fetch() call), keeping the raw key out of *this public repo's git
+# history* is still real protection against GitHub's/bots' secret
+# scanning, distinct from "visible to someone who already has dashboard
+# access". See homepage-widget-tokens.yaml's comment for the full
+# reasoning and the live verification that this substitution actually
+# reaches custom.js (undocumented for anything other than services.yaml).
+#
 # Enrolled in Ballast's full measure+apply+resize lifecycle (see
 # ../apps/ballast.yaml) - a convenience dashboard, not cluster-critical
 # infra.
@@ -110,6 +121,9 @@ persistence:
       - path: /app/config/custom.css
         subPath: custom.css
         readOnly: true
+      - path: /app/config/custom.js
+        subPath: custom.js
+        readOnly: true
 
 configMaps:
   homepage-config:
@@ -130,7 +144,7 @@ configMaps:
         statusStyle: dot
         hideVersion: true
         useEqualHeights: true
-        cardBlur: xs
+        cardBlur: md
         quicklaunch:
           searchDescriptions: true
           showSearchSuggestions: false
@@ -384,3 +398,59 @@ configMaps:
         #page_wrapper h3 {
           letter-spacing: 0.02em;
         }
+
+        /* Random-nature-photo backdrop (custom.js sets --nikflix-bg on
+           <html> once the Unsplash fetch resolves). A fixed pseudo-element
+           behind everything, not Homepage's native settings.yaml
+           `background:` field - that field wants a static URL, and this
+           one has to change per page load. Starts as `none` so there's no
+           flash of a broken/empty background before the fetch resolves,
+           and stays `none` forever if Unsplash is unreachable or
+           rate-limited - the dashboard is fully usable either way, this
+           is decorative only. html/body are forced transparent so the
+           backdrop actually shows through Homepage's own dark theme
+           background paint; cardBlur (settings.yaml) handles the
+           frosted-glass look on the tiles themselves. */
+        html {
+          --nikflix-bg: none;
+        }
+        html,
+        body {
+          background: transparent !important;
+        }
+        body::before {
+          content: "";
+          position: fixed;
+          inset: -10px;
+          z-index: -1;
+          background-image: var(--nikflix-bg);
+          background-size: cover;
+          background-position: center;
+          filter: blur(3px) brightness(0.4) saturate(1.15);
+        }
+
+      # Loaded by Homepage as a real script (/api/config/custom.js) - see
+      # https://gethomepage.dev/configs/custom-css-js/ and custom.css's
+      # comment above on the Unsplash Access Key embedded below. Fails
+      # silently (caught, no throw) since a broken/rate-limited photo
+      # fetch must never break the dashboard itself.
+      custom.js: |
+        (function () {
+          var UNSPLASH_ACCESS_KEY = "{{ "{{HOMEPAGE_VAR_UNSPLASH_ACCESS_KEY}}" }}";
+          var endpoint =
+            "https://api.unsplash.com/photos/random?query=nature&orientation=landscape&content_filter=high&client_id=" +
+            UNSPLASH_ACCESS_KEY;
+
+          fetch(endpoint)
+            .then(function (res) {
+              return res.ok ? res.json() : Promise.reject(new Error("Unsplash HTTP " + res.status));
+            })
+            .then(function (photo) {
+              var url = photo && photo.urls && (photo.urls.full || photo.urls.regular);
+              if (!url) return;
+              document.documentElement.style.setProperty("--nikflix-bg", "url('" + url + "')");
+            })
+            .catch(function (err) {
+              console.warn("[custom.js] Unsplash background fetch failed, leaving default theme:", err);
+            });
+        })();
