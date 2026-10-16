@@ -344,6 +344,18 @@ configMaps:
                   url: http://sabnzbd.media.svc.cluster.local:8080
                   key: "{{ "{{HOMEPAGE_VAR_SABNZBD_API_KEY}}" }}"
 
+        - 3D Printing:
+            - Spoolman:
+                icon: spoolman.png
+                href: https://spoolman.lab.pcenicni.dev
+                description: Filament spool inventory
+                # Spoolman's API has no auth of its own, so the widget
+                # needs no key - just the in-cluster Service address
+                # (bypassing the forward-auth on the public Ingress).
+                widget:
+                  type: spoolman
+                  url: http://spoolman.spoolman.svc.cluster.local:8000
+
         - Monitoring:
             - Grafana:
                 icon: grafana.png
