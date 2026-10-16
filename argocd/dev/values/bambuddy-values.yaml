@@ -1,0 +1,175 @@
+# Bambuddy - values for the bjw-s/app-template Helm chart. See
+# ../apps/bambuddy.yaml. Single container, built-in SQLite database on its
+# own PVC (DATABASE_URL can point at Postgres instead - not needed at this
+# scale).
+#
+# Plain pod networking, not hostNetwork. Bambuddy connects OUT to each
+# printer (MQTT 8883, FTPS 990, camera), which works from a normal pod as
+# long as the nodes can route to the printers' LAN/VLAN. What this gives up:
+#   - SSDP printer discovery (needs L2 multicast) - add printers by IP in
+#     the UI instead (LAN-mode access code + serial from the printer).
+#   - SSDP auto-discovery of the virtual printer by the slicer (see below).
+#
+# Virtual printer (slicer sends straight to Bambuddy): exposed on its own
+# MetalLB LoadBalancer Service, service.vp below, pinned to 192.168.10.245
+# (top of ../manifests/metallb-pool/'s range, so dynamic allocations from
+# the bottom don't take it). All VP ports share that one IP, so this
+# supports ONE virtual printer, in a server mode (Immediate/Review/Print
+# Queue) - its FTP passive slice is 50000-50009 (VP 1). Proxy mode needs
+# 50000-50100 and isn't exposed. In the slicer: import Bambuddy's CA cert
+# first (see wiki.bambuddy.cool/features/virtual-printer), then add the
+# printer manually by IP (192.168.10.245) + the VP's access code.
+#
+# Spoolman integration is configured in Bambuddy's own Settings UI - use
+# the in-cluster address http://spoolman.spoolman.svc.cluster.local:8000
+# (bypasses the forward-auth on Spoolman's public Ingress).
+#
+# Behind the shared media-authentik-forward-auth middleware below, like
+# every other admin tool here. Bambuddy's own optional login can stay off.
+#
+# Enrolled in Ballast's full measure+apply+resize lifecycle (see
+# ../apps/ballast.yaml) - a convenience app, not cluster-critical infra.
+defaultPodOptions:
+  labels:
+    ballast.tightlinesoftware.com/mode: resize
+  # Bambuddy reads PORT/HOST env vars - keep Kubernetes' Docker-style
+  # service-link variables out of its environment.
+  enableServiceLinks: false
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/maziggy/bambuddy
+          tag: 1.2.5.7
+        env:
+          TZ: "Etc/UTC"
+          PORT: "8000"
+          # The pod IP isn't reachable from the slicer - tell the VP to
+          # advertise the LoadBalancer IP instead (MQTT upload destination
+          # and FTP PASV reply both).
+          VIRTUAL_PRINTER_ADVERTISE_ADDRESS: "192.168.10.245"
+          VIRTUAL_PRINTER_PASV_ADDRESS: "192.168.10.245"
+        # The VP's FTPS/RTSP listeners bind privileged ports (990, 322)
+        # after the entrypoint drops to UID 1000 - without this they
+        # silently fail to open.
+        securityContext:
+          capabilities:
+            add: ["NET_BIND_SERVICE"]
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8000
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /health
+                port: 8000
+        resources:
+          requests:
+            cpu: 25m
+            memory: 256Mi
+          limits:
+            memory: 1Gi
+
+service:
+  main:
+    controller: main
+    # With a second Service (vp) the chart would suffix this one's name
+    # (bambuddy-main) - keep the plain name Homepage's siteMonitor uses.
+    forceRename: bambuddy
+    ports:
+      http:
+        port: 8000
+  vp:
+    controller: main
+    type: LoadBalancer
+    annotations:
+      metallb.io/loadBalancerIPs: 192.168.10.245
+    ports:
+      bind:
+        port: 3000
+      bind-alt:
+        port: 3002
+      mqtt:
+        port: 8883
+      ftps:
+        port: 990
+      ftp-tunnel:
+        port: 6000
+      rtsps:
+        port: 322
+      slicer-2024:
+        port: 2024
+      slicer-2025:
+        port: 2025
+      slicer-2026:
+        port: 2026
+      ftp-pasv-0:
+        port: 50000
+      ftp-pasv-1:
+        port: 50001
+      ftp-pasv-2:
+        port: 50002
+      ftp-pasv-3:
+        port: 50003
+      ftp-pasv-4:
+        port: 50004
+      ftp-pasv-5:
+        port: 50005
+      ftp-pasv-6:
+        port: 50006
+      ftp-pasv-7:
+        port: 50007
+      ftp-pasv-8:
+        port: 50008
+      ftp-pasv-9:
+        port: 50009
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd
+    hosts:
+      - host: bambuddy.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["bambuddy.lab.pcenicni.dev"]
+        secretName: bambuddy-tls
+
+persistence:
+  # The image's entrypoint starts as root, chowns /app/data and /app/logs
+  # to PUID:PGID (default 1000:1000), then drops privileges via gosu.
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    # Holds the print archive (3MF files, thumbnails, timelapses) as well
+    # as the database - grows with print history.
+    size: 10Gi
+    storageClass: local-path
+    advancedMounts:
+      main:
+        main:
+          - path: /app/data
+  logs:
+    enabled: true
+    type: emptyDir
+    advancedMounts:
+      main:
+        main:
+          - path: /app/logs

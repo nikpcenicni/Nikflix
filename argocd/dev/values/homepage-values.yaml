@@ -355,6 +355,13 @@ configMaps:
                 widget:
                   type: spoolman
                   url: http://spoolman.spoolman.svc.cluster.local:8000
+            - Bambuddy:
+                icon: mdi-printer-3d
+                href: https://bambuddy.lab.pcenicni.dev
+                description: Bambu Lab print manager
+                # No Homepage widget type exists for Bambuddy - generic
+                # reachability check instead.
+                siteMonitor: http://bambuddy.bambuddy.svc.cluster.local:8000
 
         - Monitoring:
             - Grafana:
