@@ -16,6 +16,14 @@ locals {
   # started timing out on plain `list` calls. Each Proxmox host has 15.5GiB/
   # 6 cores with room to spare (checked via the Proxmox API before bumping).
   #
+  # Bumped again to 4 -> 6GiB (+2GiB/VM) to make room for Eclipse Che
+  # (che-operator + devworkspace-operator + dashboard/gateway, plus
+  # per-workspace pods that typically want 1-2GiB+ each). Each host still
+  # runs exactly 2 of these VMs (1 CP + 1 worker), so this raises per-host
+  # VM-dedicated memory from 8GiB to 12GiB against the documented 15.5GiB
+  # physical host total - about 3.5GiB nominally free afterward, comfortable
+  # margin even once the Proxmox host OS's own overhead is counted.
+  #
   # mgmt_ip/storage_ip are NOT applied by this config - see ../../terraform's
   # locals.tf for why (Talos ignores cloud-init; talosctl applies network
   # config afterward). Picked a distinct .121-.126 range purely so these
@@ -27,7 +35,7 @@ locals {
       node             = "helium"
       role             = "controlplane"
       vcpu             = 3
-      memory_mib       = 4 * 1024
+      memory_mib       = 6 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.121"
@@ -39,7 +47,7 @@ locals {
       node             = "helium"
       role             = "worker"
       vcpu             = 3
-      memory_mib       = 4 * 1024
+      memory_mib       = 6 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.122"
@@ -51,7 +59,7 @@ locals {
       node             = "neon"
       role             = "controlplane"
       vcpu             = 3
-      memory_mib       = 4 * 1024
+      memory_mib       = 6 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.123"
@@ -63,7 +71,7 @@ locals {
       node             = "neon"
       role             = "worker"
       vcpu             = 3
-      memory_mib       = 4 * 1024
+      memory_mib       = 6 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.124"
@@ -75,7 +83,7 @@ locals {
       node             = "argon"
       role             = "controlplane"
       vcpu             = 3
-      memory_mib       = 4 * 1024
+      memory_mib       = 6 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.125"
@@ -87,7 +95,7 @@ locals {
       node             = "argon"
       role             = "worker"
       vcpu             = 3
-      memory_mib       = 4 * 1024
+      memory_mib       = 6 * 1024
       boot_disk_gb     = 20
       longhorn_disk_gb = 20
       mgmt_ip          = "192.168.10.126"

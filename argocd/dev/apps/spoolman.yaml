@@ -1,0 +1,35 @@
+# Spoolman - 3D printer filament spool inventory/usage tracker
+# (Donkie/Spoolman). Values in ../values/spoolman-values.yaml. Same
+# two-source bjw-s/app-template shape as profilarr/homepage/etc.
+#
+# Own `spoolman` namespace rather than `media` - not part of the media
+# stack. Still sits behind the shared media-authentik-forward-auth
+# Middleware, which is deliberately domain-level/cross-namespace (same as
+# homepage.yaml) - see ../../README.md's "SSO: authentik forward-auth
+# (domain level)" section.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spoolman
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/spoolman-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spoolman
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,97 @@
+# Spoolman - values for the bjw-s/app-template Helm chart. See
+# ../apps/spoolman.yaml. Single container, built-in SQLite database on its
+# own PVC (no external DB needed at this scale). Spoolman's own nightly
+# SQLite backup (SPOOLMAN_AUTOMATIC_BACKUP, on by default) writes into the
+# same volume under backups/.
+#
+# No native auth in Spoolman - sits behind the shared
+# media-authentik-forward-auth middleware below, like every other admin
+# tool here. Note: anything that calls Spoolman's API from outside the
+# cluster (e.g. Moonraker/Klipper's [spoolman] integration on a printer)
+# can't complete an authentik login, so it would need its own unauthenticated
+# path in - not set up here.
+#
+# Enrolled in Ballast's full measure+apply+resize lifecycle (see
+# ../apps/ballast.yaml) - a convenience app, not cluster-critical infra.
+defaultPodOptions:
+  labels:
+    ballast.tightlinesoftware.com/mode: resize
+  # The chart's Service is named `spoolman`, so Kubernetes' Docker-style
+  # service-link env vars would set SPOOLMAN_PORT=tcp://<ip>:8000 and clash
+  # with Spoolman's own SPOOLMAN_PORT setting. Its entrypoint works around
+  # this, but not injecting them at all is cleaner.
+  enableServiceLinks: false
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/donkie/spoolman
+          tag: 0.27.0
+        env:
+          TZ: "Etc/UTC"
+          SPOOLMAN_HOST: "0.0.0.0"
+          SPOOLMAN_PORT: "8000"
+          # Spoolman checks GitHub for releases and shows a footer banner -
+          # version bumps go through this file instead.
+          SPOOLMAN_UPDATE_CHECK: "FALSE"
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/v1/health
+                port: 8000
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /api/v1/health
+                port: 8000
+        resources:
+          requests:
+            cpu: 10m
+            memory: 128Mi
+          limits:
+            memory: 512Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 8000
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd
+    hosts:
+      - host: spoolman.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["spoolman.lab.pcenicni.dev"]
+        secretName: spoolman-tls
+
+persistence:
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    advancedMounts:
+      main:
+        main:
+          # Default SPOOLMAN_DIR_DATA for the image's `app` user.
+          - path: /home/app/.local/share/spoolman
