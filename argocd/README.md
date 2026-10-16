@@ -27,6 +27,7 @@ argocd/
 │   │   ├── alloy.yaml
 │   │   ├── authentik.yaml
 │   │   ├── ballast.yaml
+│   │   ├── bambuddy.yaml
 │   │   ├── bazarr.yaml
 │   │   ├── cert-manager.yaml
 │   │   ├── eclipse-che.yaml
@@ -45,6 +46,7 @@ argocd/
 │   │   ├── seerr.yaml
 │   │   ├── sonarr.yaml
 │   │   ├── sops-secrets-operator.yaml
+│   │   ├── spoolman.yaml
 │   │   ├── traefik.yaml
 │   │   ├── argocd.yaml
 │   │   ├── argocd-config.yaml
@@ -61,6 +63,7 @@ argocd/
 │   │   ├── alloy-values.yaml
 │   │   ├── authentik-values.yaml
 │   │   ├── ballast-values.yaml
+│   │   ├── bambuddy-values.yaml
 │   │   ├── bazarr-values.yaml
 │   │   ├── cert-manager-values.yaml
 │   │   ├── headlamp-values.yaml
@@ -78,6 +81,7 @@ argocd/
 │   │   ├── seerr-values.yaml
 │   │   ├── sonarr-values.yaml
 │   │   ├── sops-secrets-operator-values.yaml
+│   │   ├── spoolman-values.yaml
 │   │   └── traefik-values.yaml
 │   └── manifests/
 │       ├── argocd/              # vendored copy of ArgoCD's own install manifest
@@ -132,7 +136,8 @@ groups:
 |---|---|---|---|
 | `alloy` | Helm chart `alloy` from the Grafana chart repository, values in `dev/values/alloy-values.yaml` | `monitoring` | Per-node log shipper. Alloy runs as a DaemonSet on every node and sends pod logs to Loki. |
 | `authentik` | Helm chart `authentik` from the authentik chart repository, values in `dev/values/authentik-values.yaml` | `authentik` | Identity provider (SSO). Serves `auth.lab.pcenicni.dev`. Its values file embeds a declarative [blueprint](https://docs.goauthentik.io/customize/blueprints/) (`authentik-blueprints` ConfigMap) that creates the OAuth2/OIDC provider, application, and RBAC groups for Grafana, ArgoCD, and Headlamp - see [SSO / authentik](#sso--authentik). The server and worker pods each expose their own `:9300` metrics endpoint; `server.metrics`/`worker.metrics` (chart-native `enabled`/`serviceMonitor.enabled`, not raw manifests) turn on the Service + ServiceMonitor pair for each, feeding a Grafana authentik dashboard. Depends on `sops-secrets-operator` and `secrets` having synced first. |
-| `ballast` | Helm chart `ballast` from `ghcr.io/tight-line/charts` (OCI), values in `dev/values/ballast-values.yaml` | `ballast` | [Ballast](https://github.com/Tight-Line/ballast) - auto-rightsizing operator. Measures real CPU/memory/ephemeral-storage usage per workload (via `metrics-server` and the kubelet Summary API) and applies rightsized requests/limits, either at admission or on already-running pods through the in-place pod resize API. This Application installs the operator, its CRDs (`WorkloadProfile`, `ClusterResourcePolicy`/`ResourcePolicy`, `MetricsSource`, `BallastConfig`), and its cert-manager-backed admission webhook - it is opt-in per workload via a `ballast.tightlinesoftware.com/mode` label on the workload's pod template (set through `defaultPodOptions.labels` in that app-template Application's own values file, not here). The full media stack (`bazarr`, `profilarr`, `seerr`, `prowlarr`, `qbittorrent`, `radarr`, `sabnzbd`, `sonarr`) is enrolled at `mode: resize`, the full measure+apply+resize lifecycle - convenience apps, not cluster-critical infra. Nothing outside the media stack is enrolled. Bundles its own Valkey instance (PVC-backed, `local-path`) for usage history. Depends on `cert-manager` having synced first (the chart's own self-signed Issuer/Certificate for its webhook's serving certificate) and `metrics-server` having synced first (its default `MetricsSource` needs the Metrics API to actually read from). |
+| `ballast` | Helm chart `ballast` from `ghcr.io/tight-line/charts` (OCI), values in `dev/values/ballast-values.yaml` | `ballast` | [Ballast](https://github.com/Tight-Line/ballast) - auto-rightsizing operator. Measures real CPU/memory/ephemeral-storage usage per workload (via `metrics-server` and the kubelet Summary API) and applies rightsized requests/limits, either at admission or on already-running pods through the in-place pod resize API. This Application installs the operator, its CRDs (`WorkloadProfile`, `ClusterResourcePolicy`/`ResourcePolicy`, `MetricsSource`, `BallastConfig`), and its cert-manager-backed admission webhook - it is opt-in per workload via a `ballast.tightlinesoftware.com/mode` label on the workload's pod template (set through `defaultPodOptions.labels` in that app-template Application's own values file, not here). The full media stack (`bazarr`, `profilarr`, `seerr`, `prowlarr`, `qbittorrent`, `radarr`, `sabnzbd`, `sonarr`) is enrolled at `mode: resize`, the full measure+apply+resize lifecycle - convenience apps, not cluster-critical infra - as are `bambuddy` and `spoolman`. Nothing else is enrolled. Bundles its own Valkey instance (PVC-backed, `local-path`) for usage history. Depends on `cert-manager` having synced first (the chart's own self-signed Issuer/Certificate for its webhook's serving certificate) and `metrics-server` having synced first (its default `MetricsSource` needs the Metrics API to actually read from). |
+| `bambuddy` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bambuddy-values.yaml` | `bambuddy` | Print archive, monitoring, and queue manager for Bambu Lab printers ([maziggy/bambuddy](https://github.com/maziggy/bambuddy)). Built-in SQLite database and print archive on a `local-path` PVC. Plain pod networking: it connects out to each printer (MQTT/FTPS), so printers are added by IP (no SSDP discovery). One virtual printer (server modes only, not proxy mode) is exposed on its own MetalLB LoadBalancer Service pinned to `192.168.10.245` - add it in the slicer manually by that IP after importing Bambuddy's CA certificate. No widget type in Homepage, so its tile uses `siteMonitor`. Sits behind the shared forward-auth middleware. Enrolled in Ballast at `mode: resize`. |
 | `bazarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/bazarr-values.yaml` | `media` | Subtitle automation - watches the Sonarr/Radarr libraries and fetches matching subtitles. See [Media stack](#media-stack). |
 | `cert-manager` | Helm chart `cert-manager` from the jetstack chart repository, values in `dev/values/cert-manager-values.yaml` | `cert-manager` | Issues and renews TLS certificates. Brought under GitOps at the chart version already running (`cert-manager-v1.21.0`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `cluster-issuers` depends on this. Syncs with `ServerSideApply=true`, same annotation-size reasoning as `kube-prometheus-stack`. |
 | `eclipse-che` | Helm chart `eclipse-che` from the Eclipse Che chart repository (che-operator and the CheCluster Custom Resource Definitions (CRDs)) | `eclipse-che` | Installs the Che operator only. The `che-cluster` Application's `CheCluster` custom resource configures the actual instance. Single-source, not the usual two-source shape: this chart's `values.yaml` is empty, and nothing in it is templated, so there is no matching `dev/values/eclipse-che-values.yaml`. Depends on `cert-manager` having synced first, for the chart's own Issuer/Certificate pair for its admission webhook's serving certificate. Syncs with `ServerSideApply=true` - same annotation-size reasoning as `kube-prometheus-stack`. Its CRD is about 22,700 lines. |
@@ -151,6 +156,7 @@ groups:
 | `seerr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/seerr-values.yaml` | `media` | User-facing request portal - approved requests get forwarded to Sonarr/Radarr. Replaces the former `jellyseerr` Application (seerr-team/seerr is the same project, renamed) - deployed as a fresh instance, not migrated. See [Media stack](#media-stack). |
 | `sonarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/sonarr-values.yaml` | `media` | TV automation - tracks wanted episodes, searches indexers, sends grabs to a downloader, imports finished files. See [Media stack](#media-stack). |
 | `sops-secrets-operator` | Helm chart `sops-secrets-operator` from the isindir chart repository, values in `dev/values/sops-secrets-operator-values.yaml` | `sops` | Watches `SopsSecret` custom resources cluster-wide and decrypts them into real Kubernetes Secrets - see [Secrets management](#secrets-management). |
+| `spoolman` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/spoolman-values.yaml` | `spoolman` | 3D printer filament spool inventory and usage tracking ([Donkie/Spoolman](https://github.com/Donkie/Spoolman)). Built-in SQLite database on a `local-path` PVC, with Spoolman's own nightly backup into the same volume. No native auth - sits behind the shared forward-auth middleware like the admin-tool apps. Enrolled in Ballast at `mode: resize`. |
 | `traefik` | Helm chart `traefik` from the official traefik chart repository, values in `dev/values/traefik-values.yaml` | `traefik` | Ingress controller. Brought under GitOps at the chart version already running (`traefik-41.0.2`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `ingress-apps` routes through this. Syncs with `ServerSideApply=true`. |
 | `argocd` | Raw manifests (vendored upstream install manifest) in `dev/manifests/argocd/` | `argocd` | The rest of ArgoCD's own install, beyond what `argocd-config` manages - CRDs, controllers, RBAC. ArgoCD managing itself - see [Applications brought under GitOps](#applications-brought-under-gitops). |
 | `argocd-config` | Raw manifests in `dev/manifests/argocd-config/` | `argocd` | Patches the `argocd-cm`, `argocd-rbac-cm`, and `argocd-cmd-params-cm` ConfigMaps that ArgoCD's own install created. Wires up OIDC login against authentik, maps the `ArgoCD Admins`/`ArgoCD Viewers` authentik groups to ArgoCD's built-in `admin`/`readonly` roles, and keeps `argocd-server` running in `--insecure` mode since Traefik terminates TLS. Also owns three `ServiceMonitor` resources (`servicemonitors.yaml`) for ArgoCD's `argocd-metrics`, `argocd-server-metrics`, and `argocd-notifications-controller-metrics` Services - the vendored `argocd` install creates those Services but no ServiceMonitor, so kube-prometheus-stack's Prometheus never scraped `argocd_*` metrics without these, leaving the community "ArgoCD" Grafana dashboard (ID 14584) empty. |
@@ -766,7 +772,7 @@ credential:
   then add `HOMEPAGE_VAR_QBITTORRENT_USERNAME`/
   `HOMEPAGE_VAR_QBITTORRENT_PASSWORD`.
 
-Profilarr, Headlamp, and Eclipse Che also use the `siteMonitor` fallback,
+Profilarr, Bambuddy, Headlamp, and Eclipse Che also use the `siteMonitor` fallback,
 for a different reason: none of them have a Homepage widget type at all
 (https://gethomepage.dev/widgets/) rather than a missing credential.
 

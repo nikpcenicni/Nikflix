@@ -1,0 +1,34 @@
+# Bambuddy - self-hosted print archive/monitoring/queue manager for Bambu
+# Lab printers (maziggy/bambuddy). Values in ../values/bambuddy-values.yaml.
+# Same two-source bjw-s/app-template shape as spoolman/profilarr/etc.
+#
+# Own `bambuddy` namespace. Sits behind the shared
+# media-authentik-forward-auth Middleware, which is deliberately
+# domain-level/cross-namespace (same as homepage.yaml/spoolman.yaml) - see
+# ../../README.md's "SSO: authentik forward-auth (domain level)" section.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bambuddy
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/bambuddy-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bambuddy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
