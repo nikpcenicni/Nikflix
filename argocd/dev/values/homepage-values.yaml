@@ -372,15 +372,15 @@ configMaps:
                 siteMonitor: http://bambuddy.bambuddy.svc.cluster.local:8000
 
         - Productivity:
-            - Plane:
-                icon: plane.png
-                href: https://plane.lab.pcenicni.dev
-                description: Project management
-                # No Homepage widget type exists for Plane - generic
-                # reachability check against the web frontend service.
-                # Plane has its own built-in auth so no forward-auth token
+            - Vikunja:
+                icon: vikunja.png
+                href: https://vikunja.lab.pcenicni.dev
+                description: Task manager
+                # No Homepage widget type exists for Vikunja - generic
+                # reachability check against the in-cluster Service instead.
+                # Vikunja has its own OIDC login so no forward-auth token
                 # is needed for the siteMonitor check itself.
-                siteMonitor: http://plane-web.plane.svc.cluster.local:3000
+                siteMonitor: http://vikunja.vikunja.svc.cluster.local:3456
 
         - Monitoring:
             - Grafana:

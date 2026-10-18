@@ -1,0 +1,140 @@
+# Vikunja - values for the official Vikunja Helm chart (OCI:
+# ghcr.io/go-vikunja/helm-chart, chart version 2.4.0). See ../apps/vikunja.yaml.
+#
+# The chart wraps the bjw-s common library. Config is inside the `vikunja:`
+# key; the common library's own values (controllers, service, ingress, env,
+# persistence, etc.) are nested under `vikunja:` as well.
+#
+# Vikunja is a single Go binary that serves the API and embeds the frontend.
+# It listens on port 3456 (hardcoded in the chart's vikunja.yaml template).
+#
+# OIDC: The client_id and client_secret are NOT in this file. They are passed
+# as env vars (VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTID and
+# VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTSECRET) from the
+# vikunja-oidc-secret Secret (decrypted from
+# ../manifests/secrets/vikunja-oidc-secret.yaml). Vikunja's viper config reads
+# these via its VIKUNJA_ prefix + "." → "_" key replacer, mapping them to
+# auth.openid.providers.authentik.clientid and .clientsecret respectively.
+#
+# Storage: two local-path PVCs - one for uploaded files (/app/vikunja/files)
+# and one for the SQLite database (/db). Both use local-path, this cluster's
+# only StorageClass.
+#
+# No native auth bypass needed: Vikunja has its own OIDC login flow via
+# Authentik (provider slug: `vikunja`). It does NOT sit behind the shared
+# media-authentik-forward-auth Middleware.
+
+vikunja:
+  image:
+    repository: vikunja/vikunja
+    tag: "0.24.6"
+    pullPolicy: IfNotPresent
+
+  # ============================================================
+  # Main application config (mounted as /etc/vikunja/config.yml)
+  # https://vikunja.io/docs/config-options/
+  # ============================================================
+  configMaps:
+    config:
+      enabled: true
+      data:
+        config.yml: |
+          service:
+            publicurl: "https://vikunja.lab.pcenicni.dev"
+
+          # Use SQLite for simplicity - no external DB needed at homelab scale.
+          database:
+            type: "sqlite"
+
+          auth:
+            local:
+              # Disable local (username/password) login - OIDC only.
+              # Users must log in via Authentik. Set to true temporarily
+              # to bootstrap if OIDC is broken.
+              enabled: false
+            openid:
+              enabled: true
+              # Redirect clients that try to log in without selecting a
+              # provider straight to Authentik (only one provider configured).
+              redirecturl: "https://vikunja.lab.pcenicni.dev/auth/openid/"
+              providers:
+                - name: "Authentik"
+                  # `key` becomes the URL segment: /auth/openid/authentik
+                  # Must match the provider slug in the Authentik blueprint
+                  # (slug: vikunja) AND the redirect_uri registered there.
+                  key: "authentik"
+                  # OIDC discovery endpoint for the `vikunja` Authentik application.
+                  authurl: "https://auth.lab.pcenicni.dev/application/o/vikunja/"
+                  # client_id and client_secret are supplied via env vars:
+                  # VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTID
+                  # VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTSECRET
+                  # (viper maps VIKUNJA_<KEY> → <key>, "." → "_")
+
+  # ============================================================
+  # Environment - pass OIDC credentials from the vikunja-oidc-secret
+  # Secret (sops-secrets-operator decrypts
+  # ../manifests/secrets/vikunja-oidc-secret.yaml into this).
+  # ============================================================
+  env:
+    VIKUNJA_DATABASE_TYPE: "sqlite"
+    VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTID:
+      valueFrom:
+        secretKeyRef:
+          name: vikunja-oidc-secret
+          key: VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTID
+    VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTSECRET:
+      valueFrom:
+        secretKeyRef:
+          name: vikunja-oidc-secret
+          key: VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTSECRET
+
+  # ============================================================
+  # Ingress - standard Traefik + cert-manager pattern.
+  # NOT behind media-authentik-forward-auth - Vikunja has its own OIDC login.
+  # ============================================================
+  ingress:
+    main:
+      enabled: true
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        # nginx.ingress.kubernetes.io/proxy-body-size is replaced with the
+        # Traefik equivalent for file upload support.
+        traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      ingressClassName: traefik
+      hosts:
+        - host: vikunja.lab.pcenicni.dev
+          paths:
+            - path: /
+      tls:
+        - hosts:
+            - vikunja.lab.pcenicni.dev
+          secretName: vikunja-tls
+
+  # ============================================================
+  # Persistence - local-path PVCs for files and SQLite database.
+  # local-path is this cluster's only StorageClass.
+  # ============================================================
+  persistence:
+    data:
+      enabled: true
+      accessMode: ReadWriteOnce
+      size: 5Gi
+      mountPath: /app/vikunja/files
+      storageClass: local-path
+    database:
+      enabled: true
+      accessMode: ReadWriteOnce
+      size: 2Gi
+      mountPath: /db
+      storageClass: local-path
+
+  # ============================================================
+  # Resource sizing - small VMs (homelab), not production defaults.
+  # Raise if you observe OOMKills via `kubectl top pods -n vikunja`.
+  # ============================================================
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
