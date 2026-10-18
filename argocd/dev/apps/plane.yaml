@@ -1,0 +1,44 @@
+# Plane - self-hosted project management (GitHub Issues / Linear alternative,
+# plane.so). Values in ../values/plane-values.yaml.
+#
+# Uses the official makeplane/plane-ce Helm chart from https://helm.plane.so/
+# rather than bjw-s/app-template - this chart bundles its own PostgreSQL,
+# Redis (Valkey), RabbitMQ, and MinIO instances, all as local StatefulSets,
+# which is the intended homelab deployment model.
+#
+# Secrets: the chart's external_secrets.* fields point at plane-app-keys,
+# plane-pgdb, plane-rabbitmq, and plane-doc-store Secrets, all decrypted from
+# dev/manifests/secrets/plane-secrets.yaml by sops-secrets-operator. Fill and
+# encrypt that file before the first sync - see its own header for the exact
+# steps. Depends on sops-secrets-operator (and secrets) having synced first.
+#
+# Own `plane` namespace. Does NOT sit behind the shared
+# media-authentik-forward-auth Middleware - Plane has its own built-in auth
+# (account signup/login) and is the tool users interact with directly, same
+# reasoning as seerr.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: plane
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.plane.so/
+      chart: plane-ce
+      targetRevision: 1.8.5
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/plane-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: plane
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
