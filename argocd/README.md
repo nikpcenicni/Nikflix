@@ -45,6 +45,7 @@ argocd/
 │   │   ├── sabnzbd.yaml
 │   │   ├── seerr.yaml
 │   │   ├── sonarr.yaml
+│   │   ├── plane.yaml
 │   │   ├── sops-secrets-operator.yaml
 │   │   ├── spoolman.yaml
 │   │   ├── traefik.yaml
@@ -80,6 +81,7 @@ argocd/
 │   │   ├── sabnzbd-values.yaml
 │   │   ├── seerr-values.yaml
 │   │   ├── sonarr-values.yaml
+│   │   ├── plane-values.yaml
 │   │   ├── sops-secrets-operator-values.yaml
 │   │   ├── spoolman-values.yaml
 │   │   └── traefik-values.yaml
@@ -147,6 +149,7 @@ groups:
 | `loki` | Helm chart `loki` from the Grafana chart repository, values in `dev/values/loki-values.yaml` | `monitoring` | Log storage. Loki stores the logs that Alloy sends to it. The dev cluster's values file sets single-binary mode with filesystem storage. |
 | `metallb` | Helm chart `metallb` from the official metallb chart repository, values in `dev/values/metallb-values.yaml` | `metallb-system` | Assigns LoadBalancer IPs on bare metal. Brought under GitOps at the chart version already running (`metallb-0.16.1`) - see [Applications brought under GitOps](#applications-brought-under-gitops). `metallb-pool` depends on this. Syncs with `ServerSideApply=true`. |
 | `metrics-server` | Helm chart `metrics-server` from the official metrics-server chart repository, values in `dev/values/metrics-server-values.yaml` | `kube-system` | Kubernetes Metrics API (`kubectl top nodes`/`kubectl top pods`). Runs with `--kubelet-insecure-tls` - confirmed live as necessary: Talos's kubelet serving certs are valid but only SAN the node's hostname, not its IP, so scraping via `InternalIP` (this chart's default preferred address type) fails certificate verification otherwise. This only disables metrics-server's outbound verification of each kubelet's own cert; the Metrics API it serves to callers (`kubectl top`, Ballast, HPA) still goes over its own generated serving certificate. `ballast` depends on this for its default `kubernetesMetrics` `MetricsSource`. |
+| `plane` | Helm chart `plane-ce` from the makeplane chart repository (`https://helm.plane.so/`), values in `dev/values/plane-values.yaml` | `plane` | Self-hosted project management tool ([plane.so](https://plane.so)) - GitHub Issues / Linear alternative. Bundles its own PostgreSQL, Redis (Valkey), RabbitMQ, and MinIO as local StatefulSets, all on `local-path` PVCs. Serves `plane.lab.pcenicni.dev`. Has its own built-in auth (email/password signup) - deliberately NOT behind the shared `media-authentik-forward-auth` Middleware, same reasoning as `seerr`. All credentials (signing keys, postgres password, rabbitmq password, minio credentials) are externalized via `external_secrets.*` in the values file, pointing at four Secrets decrypted from `dev/manifests/secrets/plane-secrets.yaml` by `sops-secrets-operator`. Fill and encrypt that file before the first sync (see its header). Depends on `sops-secrets-operator` having synced first. |
 | `profilarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/profilarr-values.yaml` | `media` | Configuration management for Sonarr/Radarr custom formats and quality profiles ([Dictionarry-Hub/profilarr](https://github.com/Dictionarry-Hub/profilarr)). Two containers in the pod: `main` (the web UI/API, port 6868) and `parser` (custom format/quality profile testing, reached over `localhost` rather than a Docker Compose service name). `AUTH=off` - sits behind the shared forward-auth middleware like the rest of the admin-tool apps, not Profilarr's own native OIDC support. See [Media stack](#media-stack). |
 | `prometheus-pve-exporter` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prometheus-pve-exporter-values.yaml` | `monitoring` | Scrapes the separate "noble" Proxmox VE cluster (3 nodes, API at `192.168.10.10:8006`, reachable from this cluster's pods) over its API using a read-only `monitoring@pve`/`PVEAuditor` token, so kube-prometheus-stack's Prometheus can feed a Grafana "Proxmox via Prometheus" dashboard. Mounts the `pve-exporter-config` SopsSecret as `/etc/pve.yml`. Not a plain `/metrics` scrape - it's a blackbox-style multi-target exporter, so its values file's `serviceMonitor` block (native to this chart version, no raw manifest needed) hits `/pve?target=192.168.10.10` and relabels the scraped series' `instance` label to the actual Proxmox host. Depends on the `pve-exporter-config` SopsSecret and `sops-secrets-operator` having synced first. |
 | `prowlarr` | Helm chart `app-template` from the bjw-s chart repository, values in `dev/values/prowlarr-values.yaml` | `media` | Indexer manager - one place to configure trackers/indexers, pushed out to Sonarr, Radarr, and the downloaders. See [Media stack](#media-stack). |

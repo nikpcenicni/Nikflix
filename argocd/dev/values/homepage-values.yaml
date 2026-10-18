@@ -235,6 +235,14 @@ configMaps:
             style: row
             columns: 2
             icon: mdi-download-network
+          3D Printing:
+            style: row
+            columns: 2
+            icon: mdi-printer-3d
+          Productivity:
+            style: row
+            columns: 1
+            icon: mdi-briefcase-check-outline
           Monitoring:
             style: row
             columns: 2
@@ -362,6 +370,17 @@ configMaps:
                 # No Homepage widget type exists for Bambuddy - generic
                 # reachability check instead.
                 siteMonitor: http://bambuddy.bambuddy.svc.cluster.local:8000
+
+        - Productivity:
+            - Plane:
+                icon: plane.png
+                href: https://plane.lab.pcenicni.dev
+                description: Project management
+                # No Homepage widget type exists for Plane - generic
+                # reachability check against the web frontend service.
+                # Plane has its own built-in auth so no forward-auth token
+                # is needed for the siteMonitor check itself.
+                siteMonitor: http://plane-web.plane.svc.cluster.local:3000
 
         - Monitoring:
             - Grafana:

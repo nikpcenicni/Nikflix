@@ -1,0 +1,310 @@
+# Plane CE - values for the makeplane/plane-ce Helm chart. See ../apps/plane.yaml.
+#
+# Plane bundles PostgreSQL, Redis (Valkey), RabbitMQ, and MinIO as local
+# StatefulSets. All four use local-path PVCs - this cluster's only StorageClass.
+#
+# Ingress: the chart's built-in ingress is disabled. The chart emits Traefik
+# IngressRoute CRDs when ingressClass starts with "traefik" and a standard
+# networking.k8s.io/v1 Ingress for any other value - but the standard path
+# renders ingressClassName: <value> verbatim, which would need to be "traefik"
+# to match this cluster's registered IngressClass, creating a catch-22.
+# Instead, ingress.enabled=false suppresses both chart-rendered paths, and
+# extraObjects below emits a properly-formed Ingress with ingressClassName:
+# traefik (matching the registered IngressClass), cert-manager annotations,
+# and the same multi-path routing the chart template would have generated.
+#
+# TLS: cert-manager issues the certificate via the letsencrypt-prod ClusterIssuer
+# (DNS-01, same as every other app in this cluster). ssl.externalTermination=true
+# tells the chart to use https:// in WEB_URL even though this chart owns no
+# Secret (Traefik terminates TLS from the cert-manager-issued Secret).
+#
+# Secrets: all credential-shaped values are externalized to plane-secrets.yaml
+# (argocd/dev/manifests/secrets/plane-secrets.yaml, SOPS-encrypted). The
+# chart's external_secrets.* fields reference four Secret names that
+# sops-secrets-operator decrypts from that file. The chart renders NO inline
+# credential values itself when those fields are set.
+#
+# Plane has its own built-in auth (email/password signup + OAuth options) and
+# is the tool users interact with directly - it is NOT behind the shared
+# media-authentik-forward-auth Middleware. See ../apps/plane.yaml's comment.
+
+planeVersion: v1.4.2
+
+# Disable the chart's own ingress rendering entirely. The Ingress is supplied
+# via extraObjects below, where ingressClassName: traefik can be set correctly.
+ingress:
+  enabled: false
+  # appHost is still read by the chart to build WEB_URL and CORS_ALLOWED_ORIGINS.
+  appHost: plane.lab.pcenicni.dev
+
+# Tell the chart that users reach Plane over https://, even though the chart
+# owns no TLS Secret (Traefik terminates TLS from the cert-manager-issued cert).
+# This sets WEB_URL: "https://plane.lab.pcenicni.dev" in the ConfigMap.
+# externalTermination=true also triggers plane.tlsEnabled=true, which is what
+# the chart uses for WEB_URL scheme; ssl.tls_secret_name is intentionally empty
+# because the chart cannot manage this cert (cert-manager owns it).
+ssl:
+  externalTermination: true
+
+# ============================================================
+# Externalized secrets - point at Secrets from plane-secrets.yaml.
+# sops-secrets-operator decrypts plane-secrets.yaml into these Secret names.
+# See argocd/dev/manifests/secrets/plane-secrets.yaml for key names and
+# setup steps.
+# ============================================================
+external_secrets:
+  # SECRET_KEY and LIVE_SERVER_SECRET_KEY. Added last in envFrom across all
+  # workloads (overrides the chart-generated app-secrets for these two keys).
+  # These are the genuinely security-critical values: SECRET_KEY encrypts
+  # instance config rows in the database; changing it silently breaks all
+  # previously-encrypted values.
+  app_keys_existingSecret: plane-app-keys
+
+  # Postgres credentials: POSTGRES_PASSWORD, POSTGRES_DB, POSTGRES_USER.
+  # When set, the chart skips rendering its own plane-pgdb-secrets Secret.
+  # NOTE: the chart builds DATABASE_URL in plane-app-secrets from
+  # env.pgdb_password below - keep that value in sync with POSTGRES_PASSWORD
+  # in plane-secrets.yaml. Both default to "plane" (the chart's own default),
+  # which is fine for this internal-only service that has no cluster Ingress.
+  pgdb_existingSecret: plane-pgdb
+
+  # RabbitMQ credentials: RABBITMQ_DEFAULT_USER, RABBITMQ_DEFAULT_PASS.
+  # When set, the chart skips rendering its own plane-rabbitmq-secrets Secret.
+  rabbitmq_existingSecret: plane-rabbitmq
+
+  # MinIO/doc-store credentials: MINIO_ROOT_USER, MINIO_ROOT_PASSWORD,
+  # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, USE_MINIO, AWS_S3_ENDPOINT_URL,
+  # AWS_S3_BUCKET_NAME, FILE_SIZE_LIMIT. When set, the chart skips rendering
+  # its own plane-doc-store-secrets Secret.
+  doc_store_existingSecret: plane-doc-store
+
+env:
+  # requireExplicitSecrets prevents the chart from falling back to its
+  # well-known example values for SECRET_KEY/LIVE_SERVER_SECRET_KEY.
+  requireExplicitSecrets: true
+
+  # pgdb_username and pgdb_name are non-sensitive config - also used to
+  # build DATABASE_URL in plane-app-secrets. pgdb_password here MUST match
+  # POSTGRES_PASSWORD in the plane-pgdb SopsSecret template (both default to
+  # "plane", the chart's own default - change both together if you want a
+  # stronger internal password, since this postgres has no cluster Ingress).
+  pgdb_username: plane
+  pgdb_name: plane
+  pgdb_password: plane
+
+  # CORS: the chart auto-builds this from appHost when cors_allowed_origins
+  # is empty, producing http://plane.lab.pcenicni.dev,https://plane.lab.pcenicni.dev.
+  cors_allowed_origins: ""
+
+  # No Sentry - homelab doesn't need remote error reporting.
+  sentry_dsn: ""
+  sentry_environment: ""
+
+# ============================================================
+# Local datastores - all use local-path PVCs.
+# ============================================================
+
+redis:
+  local_setup: true
+  image: valkey/valkey:7.2.11-alpine
+  servicePort: 6379
+  storageClass: local-path
+  volumeSize: 256Mi
+  pullPolicy: IfNotPresent
+
+postgres:
+  local_setup: true
+  image: postgres:15.7-alpine
+  servicePort: 5432
+  storageClass: local-path
+  # Plane's database grows with issues, projects, and attachments. 5Gi
+  # is a reasonable starting point for a homelab; expand if needed.
+  volumeSize: 5Gi
+  pullPolicy: IfNotPresent
+
+rabbitmq:
+  local_setup: true
+  image: rabbitmq:3.13.6-management-alpine
+  pullPolicy: IfNotPresent
+  servicePort: 5672
+  managementPort: 15672
+  storageClass: local-path
+  volumeSize: 256Mi
+  # Credentials come from plane-rabbitmq via external_secrets above.
+  # These chart-default values are overridden by the Secret at runtime;
+  # they exist here only to keep the chart's own rabbitmq StatefulSet
+  # command-line args well-formed at render time.
+  default_user: plane
+  default_password: plane
+
+minio:
+  local_setup: true
+  image: docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+  image_mc: docker.io/pgsty/mc:RELEASE.2026-09-16T00-00-00Z
+  init_image: busybox
+  pullPolicy: IfNotPresent
+  storageClass: local-path
+  # Grows with uploaded file attachments. 10Gi initial; expand as needed.
+  volumeSize: 10Gi
+  # Credentials come from plane-doc-store via external_secrets above.
+  # These chart-default values are overridden by the Secret at runtime.
+  root_user: admin
+  root_password: password
+  env:
+    minio_endpoint_ssl: false
+
+# ============================================================
+# Workload resource sizing.
+# This cluster has small VMs (see argocd/README.md's dev-cluster note).
+# Plane's chart default is 1000Mi limit / 50Mi request per component.
+# These tighter values keep the total footprint manageable; raise them
+# if you observe OOMKills via `kubectl top pods -n plane`.
+# ============================================================
+
+web:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+  image: artifacts.plane.so/makeplane/plane-frontend
+  pullPolicy: Always
+
+space:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+  image: artifacts.plane.so/makeplane/plane-space
+  pullPolicy: Always
+
+admin:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+  image: artifacts.plane.so/makeplane/plane-admin
+  pullPolicy: Always
+
+live:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+  image: artifacts.plane.so/makeplane/plane-live
+  pullPolicy: Always
+
+api:
+  replicas: 1
+  cpuRequest: 100m
+  memoryRequest: 256Mi
+  cpuLimit: 500m
+  memoryLimit: 768Mi
+  image: artifacts.plane.so/makeplane/plane-backend
+  pullPolicy: Always
+
+worker:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+  image: artifacts.plane.so/makeplane/plane-backend
+  pullPolicy: Always
+
+beatworker:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 64Mi
+  cpuLimit: 200m
+  memoryLimit: 256Mi
+  image: artifacts.plane.so/makeplane/plane-backend
+  pullPolicy: Always
+
+# ============================================================
+# Ingress - injected as an extra object since the chart's own ingress
+# template cannot emit ingressClassName: traefik (that would trigger
+# the IngressRoute CRD path instead of the standard Ingress path).
+# extraObjects is passed through toYaml verbatim (no tpl), so the
+# namespace is explicitly set here rather than relying on .Release.Namespace.
+# ============================================================
+extraObjects:
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: plane-ingress
+      namespace: plane
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        # No forward-auth middleware - Plane has its own built-in auth.
+    spec:
+      ingressClassName: traefik
+      rules:
+        - host: plane.lab.pcenicni.dev
+          http:
+            paths:
+              # Specific paths first (more specific matches take priority in Traefik).
+              - path: /spaces
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-space
+                    port:
+                      number: 3000
+              - path: /god-mode
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-admin
+                    port:
+                      number: 3000
+              - path: /api
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-api
+                    port:
+                      number: 8000
+              - path: /auth
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-api
+                    port:
+                      number: 8000
+              - path: /static/
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-api
+                    port:
+                      number: 8000
+              - path: /live/
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-live
+                    port:
+                      number: 3000
+              - path: /uploads
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-minio
+                    port:
+                      number: 9000
+              # Catch-all: frontend.
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: plane-web
+                    port:
+                      number: 3000
+      tls:
+        - hosts:
+            - plane.lab.pcenicni.dev
+          secretName: plane-tls
