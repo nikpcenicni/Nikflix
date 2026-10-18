@@ -1,0 +1,48 @@
+# Vikunja - self-hosted task manager (vikunja.io). Values in
+# ../values/vikunja-values.yaml.
+#
+# Uses the official Vikunja Helm chart from the OCI registry at
+# ghcr.io/go-vikunja/helm-chart. The chart bundles Vikunja's Go binary
+# (API + frontend in a single image) with SQLite storage on local-path PVCs.
+#
+# OIDC: Vikunja's auth.openid config in config.yml points at Authentik.
+# The OIDC client_id and client_secret are passed via env vars from the
+# vikunja-oidc-secret Secret (decrypted from
+# dev/manifests/secrets/vikunja-oidc-secret.yaml by sops-secrets-operator).
+# Vikunja reads them via its VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_*
+# env var bindings (viper prefix "vikunja", "." → "_" key replacer).
+#
+# Depends on sops-secrets-operator (and the secrets Application) having
+# synced first, so vikunja-oidc-secret exists before the pod starts.
+# Authentik's blueprint also needs to have synced first so the provider
+# and application exist when Vikunja first attempts OIDC login.
+#
+# Own `vikunja` namespace. Does NOT sit behind the shared
+# media-authentik-forward-auth Middleware - Vikunja has its own OIDC
+# login flow, same reasoning as seerr (users interact with it directly).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vikunja
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: oci://ghcr.io/go-vikunja/helm-chart
+      chart: vikunja
+      targetRevision: 2.4.0
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/vikunja-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vikunja
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
