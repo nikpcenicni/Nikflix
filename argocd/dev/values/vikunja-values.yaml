@@ -77,12 +77,12 @@ vikunja:
   # ============================================================
   env:
     VIKUNJA_DATABASE_TYPE: "sqlite"
-    VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTID:
+    VIKUNJA_AUTH_OPENID_PROVIDERS_0_CLIENTID:
       valueFrom:
         secretKeyRef:
           name: vikunja-oidc-secret
           key: VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTID
-    VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHENTIK_CLIENTSECRET:
+    VIKUNJA_AUTH_OPENID_PROVIDERS_0_CLIENTSECRET:
       valueFrom:
         secretKeyRef:
           name: vikunja-oidc-secret
