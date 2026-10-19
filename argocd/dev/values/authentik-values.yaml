@@ -560,6 +560,8 @@ additionalObjects:
               redirect_uris:
                 - url: "https://vikunja.lab.pcenicni.dev/auth/openid/authentik"
                   matching_mode: strict
+                - url: "mdone://oidc-callback"
+                  matching_mode: strict
               signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
               property_mappings:
                 - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
