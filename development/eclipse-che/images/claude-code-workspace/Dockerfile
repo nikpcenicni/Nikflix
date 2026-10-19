@@ -10,7 +10,7 @@
 # Code v2.1.198 the npm install requires Node.js 22+. Below that, npm prints
 # an EBADENGINE warning but still installs a native binary that runs fine -
 # we pin to 22+ anyway to stay on the supported path.
-FROM node:22-slim
+FROM node:24-slim
 
 # git/curl/ripgrep/procps: tools Claude Code's own Bash/Read/Grep-equivalent
 # tools expect to find on PATH; ca-certificates for TLS to the Anthropic API
