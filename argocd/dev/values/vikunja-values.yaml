@@ -29,6 +29,11 @@ vikunja:
     tag: "0.24.6"
     pullPolicy: IfNotPresent
 
+  # Tell Vikunja exactly where to find the config file. Without this, viper
+  # scans /etc/vikunja/ as a directory and misses the subPath bind-mount.
+  env:
+    VIKUNJA_CONFIG_PATH: /etc/vikunja/config.yml
+
   # ============================================================
   # Ingress - standard Traefik + cert-manager pattern.
   # NOT behind media-authentik-forward-auth - Vikunja has its own OIDC login.
