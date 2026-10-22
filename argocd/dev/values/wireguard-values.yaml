@@ -36,9 +36,9 @@ controllers:
           pullPolicy: IfNotPresent
         env:
           # External hostname baked into every peer config as the Endpoint.
-          # Must resolve to the router's public IP; UDP 51820 must be
-          # port-forwarded from that IP to 192.168.10.244.
-          WG_HOST: "vpn.lab.pcenicni.dev"
+          # Cloudflare DNS: vpn.pcenicni.dev A record → public IP, DNS-only
+          # (grey cloud). UniFi: port-forward UDP 51820 WAN → 192.168.10.244.
+          WG_HOST: "vpn.pcenicni.dev"
           WG_PORT: "51820"
           # Full-tunnel: all peer traffic exits via the cluster. Peers can
           # reach internal services through the Traefik ingress IP
