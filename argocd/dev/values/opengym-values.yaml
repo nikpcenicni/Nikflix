@@ -48,9 +48,7 @@ controllers:
             custom: true
             spec:
               httpGet:
-                # The API exposes its root at port 3000; a 200 (or any
-                # non-5xx response) confirms the Go process is up.
-                path: /
+                path: /api/health
                 port: 3000
               initialDelaySeconds: 10
               periodSeconds: 30
@@ -59,7 +57,7 @@ controllers:
             custom: true
             spec:
               httpGet:
-                path: /
+                path: /api/health
                 port: 3000
               initialDelaySeconds: 5
               periodSeconds: 10
@@ -76,10 +74,10 @@ controllers:
           repository: ghcr.io/duartesantos8/opengym-web
           tag: latest
         env:
-          # BACKEND tells the web container's nginx config where to proxy
-          # /api/* requests. localhost:3000 works because both containers
-          # share the same pod network namespace.
-          BACKEND: "http://localhost:3000"
+          # BACKEND is the upstream hostname nginx proxies /api/* requests to.
+          # Default in docker-compose is "api" (the service name). In a
+          # shared-network pod, localhost resolves to the API container.
+          BACKEND: "localhost"
         probes:
           liveness:
             enabled: true
