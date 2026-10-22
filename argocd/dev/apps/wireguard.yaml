@@ -9,7 +9,7 @@
 #     which is served through Traefik at wg.lab.pcenicni.dev behind
 #     Authentik forward-auth.
 #
-# WG_HOST (vpn.lab.pcenicni.dev) is the external hostname baked into peer
+# WG_HOST (vpn.pcenicni.dev) is the external hostname baked into peer
 # configs. It must resolve to the router's public IP, with UDP 51820
 # port-forwarded to 192.168.10.244. The MetalLB IP itself is not publicly
 # routable.
@@ -46,3 +46,10 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+    managedNamespaceMetadata:
+      labels:
+        # NET_ADMIN (required for the wg0 kernel interface) violates the
+        # cluster-wide PodSecurity baseline policy. Label this namespace
+        # privileged so the admission controller allows it.
+        pod-security.kubernetes.io/enforce: privileged
+        pod-security.kubernetes.io/enforce-version: latest
