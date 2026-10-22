@@ -75,9 +75,11 @@ controllers:
           tag: latest
         env:
           # BACKEND is the upstream hostname nginx proxies /api/* requests to.
-          # Default in docker-compose is "api" (the service name). In a
-          # shared-network pod, localhost resolves to the API container.
-          BACKEND: "localhost"
+          # Must be a literal IP, not a hostname: the nginx image uses Docker's
+          # embedded DNS resolver (127.0.0.11) which does not exist in
+          # Kubernetes, causing "localhost could not be resolved" 502s.
+          # 127.0.0.1 bypasses DNS and reaches the API on the shared pod network.
+          BACKEND: "127.0.0.1"
         probes:
           liveness:
             enabled: true
