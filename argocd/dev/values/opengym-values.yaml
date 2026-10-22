@@ -1,0 +1,153 @@
+# openGym - values for the bjw-s/app-template Helm chart. See
+# ../apps/opengym.yaml. Self-hosted gym and bodyweight workout tracker
+# with WebAuthn/passkey authentication (duartesantos8/opengym).
+#
+# Two containers share one pod (automatic in Kubernetes - same pattern as
+# profilarr's main+parser pair): `api` is the Go backend and `web` is the
+# nginx frontend. `web` proxies API requests to `api` over localhost; the
+# BACKEND env var tells the web container where to find the API, which is
+# http://localhost:3000 since they share the same pod network namespace.
+#
+# The API stores its SQLite database under /data - a local-path PVC holds
+# this so it survives pod restarts. The web container is stateless.
+#
+# No forward-auth middleware: openGym uses WebAuthn passkeys for auth.
+# Passkeys are bound to the origin (gym.lab.pcenicni.dev), so each user
+# registers a credential directly with openGym - no SSO layer needed or
+# appropriate (same reasoning as vikunja/seerr: users interact with the
+# login flow directly).
+#
+# RP_ID and ORIGIN must match the public hostname exactly: WebAuthn
+# validates that the origin the browser reports matches RP_ID, and it
+# does a strict scheme+host+port comparison. If either value drifts from
+# the actual Ingress hostname, passkey registration and assertion will
+# both fail with an origin mismatch error.
+
+controllers:
+  main:
+    containers:
+      api:
+        image:
+          # Go API backend - handles workout data and WebAuthn passkey auth.
+          # Upstream has no versioned releases as of initial deployment;
+          # `latest` is the only published tag.
+          repository: ghcr.io/duartesantos8/opengym-api
+          tag: latest
+        env:
+          # WebAuthn Relying Party settings - must match the public Ingress
+          # hostname exactly. RP_ID is the host-only part (no scheme/port);
+          # ORIGIN is the full URL the browser shows. A mismatch between
+          # either of these and the actual hostname causes passkey
+          # registration and assertion to fail with an origin mismatch error.
+          RP_ID: "gym.lab.pcenicni.dev"
+          ORIGIN: "https://gym.lab.pcenicni.dev"
+          RP_NAME: "openGym"
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                # The API exposes its root at port 3000; a 200 (or any
+                # non-5xx response) confirms the Go process is up.
+                path: /
+                port: 3000
+              initialDelaySeconds: 10
+              periodSeconds: 30
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 3000
+              initialDelaySeconds: 5
+              periodSeconds: 10
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+      web:
+        image:
+          # nginx frontend - serves the static SPA and proxies API calls
+          # to the Go backend over localhost:3000. Stateless.
+          repository: ghcr.io/duartesantos8/opengym-web
+          tag: latest
+        env:
+          # BACKEND tells the web container's nginx config where to proxy
+          # /api/* requests. localhost:3000 works because both containers
+          # share the same pod network namespace.
+          BACKEND: "http://localhost:3000"
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 80
+              initialDelaySeconds: 5
+              periodSeconds: 30
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 80
+              initialDelaySeconds: 5
+              periodSeconds: 10
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+          limits:
+            memory: 64Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        # The Ingress points at the nginx web container (port 80), which
+        # serves the SPA and proxies API traffic to the Go backend over
+        # localhost. Only this one port needs to be exposed externally.
+        port: 80
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      # No forward-auth middleware: openGym handles authentication itself
+      # via WebAuthn passkeys. Adding forward-auth here would break passkey
+      # registration and login, since the passkey origin assertion would
+      # have to pass through the authentik proxy layer first.
+    hosts:
+      - host: gym.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["gym.lab.pcenicni.dev"]
+        secretName: opengym-tls
+
+persistence:
+  data:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    advancedMounts:
+      main:
+        api:
+          # The Go API stores its SQLite database at /data. Only the api
+          # container needs this volume; the web container is stateless.
+          - path: /data
