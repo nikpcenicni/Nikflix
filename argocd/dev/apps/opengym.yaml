@@ -1,0 +1,39 @@
+# openGym - self-hosted gym/bodyweight workout tracker
+# (duartesantos8/opengym). Values in ../values/opengym-values.yaml. Same
+# two-source bjw-s/app-template shape as spoolman/bambuddy/profilarr/etc.
+#
+# Two containers in one pod: `api` (Go backend, port 3000) and `web`
+# (nginx frontend, port 80). They communicate over localhost since they
+# share the same pod network namespace - no inter-pod Service needed for
+# that path.
+#
+# Own `opengym` namespace, not `media`. openGym uses passkey (WebAuthn)
+# authentication - no forward-auth middleware needed or appropriate here,
+# since passkeys are bound to the specific origin and the user interacts
+# with the login flow directly (same reasoning as vikunja/seerr).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: opengym
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/opengym-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: opengym
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
