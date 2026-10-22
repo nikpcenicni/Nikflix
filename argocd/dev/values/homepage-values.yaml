@@ -241,7 +241,7 @@ configMaps:
             icon: mdi-printer-3d
           Productivity:
             style: row
-            columns: 1
+            columns: 2
             icon: mdi-briefcase-check-outline
           Monitoring:
             style: row
@@ -381,6 +381,15 @@ configMaps:
                 # Vikunja has its own OIDC login so no forward-auth token
                 # is needed for the siteMonitor check itself.
                 siteMonitor: http://vikunja.vikunja.svc.cluster.local:3456
+            - openGym:
+                icon: mdi-dumbbell
+                href: https://gym.lab.pcenicni.dev
+                description: Gym & bodyweight workout tracker
+                # No Homepage widget type exists for openGym - generic
+                # reachability check against the nginx web container's
+                # in-cluster Service instead. openGym uses passkey auth
+                # directly, so no forward-auth token is needed here.
+                siteMonitor: http://opengym.opengym.svc.cluster.local:80
 
         - Monitoring:
             - Grafana:
