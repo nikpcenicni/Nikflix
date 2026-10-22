@@ -1,0 +1,132 @@
+# WireGuard VPN - values for the bjw-s/app-template Helm chart.
+# See ../apps/wireguard.yaml.
+#
+# Uses wg-easy (ghcr.io/wg-easy/wg-easy) - a WireGuard server with a web
+# UI for creating and exporting peer configs (QR codes, .conf files). The
+# web UI lives at wg.lab.pcenicni.dev behind Authentik forward-auth; the
+# WireGuard tunnel is exposed via MetalLB LoadBalancer on UDP 51820.
+#
+# Admin password: stored as a bcrypt hash in the wireguard-secret SopsSecret
+# (injected as PASSWORD_HASH via envFrom). Default is "changeme" - replace
+# it by editing the SopsSecret with `sops argocd/dev/manifests/secrets/
+# wireguard-secret.yaml` and re-generating a hash with:
+#   docker run --rm ghcr.io/wg-easy/wg-easy:14 wgpw <new-password>
+#
+# Peer config: WG_ALLOWED_IPS pushes a full-tunnel config to each peer
+# (0.0.0.0/0) with 1.1.1.1 as DNS. All peer traffic routes through the
+# cluster's internet connection. To access internal services by hostname
+# the peer's public DNS must resolve *.lab.pcenicni.dev (which it will via
+# the normal public DNS records).
+#
+# Router setup required: UDP 51820 must be port-forwarded from the router's
+# WAN interface to 192.168.10.244 (MetalLB LoadBalancer IP). WG_HOST must
+# match the public hostname / DDNS name pointing at the router's public IP.
+#
+# NET_ADMIN is required for WireGuard's kernel interface (wg0). The
+# WireGuard module is built into the Talos kernel so SYS_MODULE is not
+# needed.
+
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: ghcr.io/wg-easy/wg-easy
+          tag: "14"
+          pullPolicy: IfNotPresent
+        env:
+          # External hostname baked into every peer config as the Endpoint.
+          # Must resolve to the router's public IP; UDP 51820 must be
+          # port-forwarded from that IP to 192.168.10.244.
+          WG_HOST: "vpn.lab.pcenicni.dev"
+          WG_PORT: "51820"
+          # Full-tunnel: all peer traffic exits via the cluster. Peers can
+          # reach internal services through the Traefik ingress IP
+          # (192.168.10.240) once their DNS resolves *.lab.pcenicni.dev.
+          WG_DEFAULT_DNS: "1.1.1.1, 1.0.0.1"
+          WG_ALLOWED_IPS: "0.0.0.0/0, ::/0"
+          LANG: "en"
+        # PASSWORD_HASH injected from wireguard-secret (SopsSecret).
+        envFrom:
+          - secretRef:
+              name: wireguard-secret
+        # wg-easy manages the wg0 kernel interface.
+        securityContext:
+          capabilities:
+            add: ["NET_ADMIN"]
+        probes:
+          liveness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 51821
+              initialDelaySeconds: 10
+              periodSeconds: 30
+          readiness:
+            enabled: true
+            custom: true
+            spec:
+              httpGet:
+                path: /
+                port: 51821
+              initialDelaySeconds: 5
+              periodSeconds: 10
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+
+service:
+  main:
+    controller: main
+    ports:
+      http:
+        port: 51821
+  vpn:
+    controller: main
+    type: LoadBalancer
+    annotations:
+      # Pinned to the top of the free range (Traefik=.240, Bambuddy=.245).
+      metallb.io/loadBalancerIPs: 192.168.10.244
+    ports:
+      wg:
+        port: 51820
+        protocol: UDP
+
+ingress:
+  main:
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      traefik.ingress.kubernetes.io/router.middlewares: media-authentik-forward-auth@kubernetescrd
+    hosts:
+      - host: wg.lab.pcenicni.dev
+        paths:
+          - path: /
+            pathType: Prefix
+            service:
+              identifier: main
+              port: http
+    tls:
+      - hosts: ["wg.lab.pcenicni.dev"]
+        secretName: wireguard-tls
+
+persistence:
+  config:
+    enabled: true
+    type: persistentVolumeClaim
+    accessMode: ReadWriteOnce
+    size: 1Gi
+    storageClass: local-path
+    advancedMounts:
+      main:
+        main:
+          # WireGuard keys, server config, and peer configs all live here.
+          # Must persist across pod restarts - existing peer private keys
+          # are stored here and cannot be regenerated without breaking
+          # connected clients.
+          - path: /etc/wireguard

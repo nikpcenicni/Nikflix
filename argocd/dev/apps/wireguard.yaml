@@ -1,0 +1,48 @@
+# WireGuard VPN - wg-easy server for remote access to the cluster.
+# Values in ../values/wireguard-values.yaml.
+#
+# Two Services:
+#   - wireguard-vpn (LoadBalancer, 192.168.10.244): exposes UDP 51820 for
+#     WireGuard peer connections. Port-forward this on the router to allow
+#     external clients to connect.
+#   - wireguard-main (ClusterIP): exposes TCP 51821 for the wg-easy web UI,
+#     which is served through Traefik at wg.lab.pcenicni.dev behind
+#     Authentik forward-auth.
+#
+# WG_HOST (vpn.lab.pcenicni.dev) is the external hostname baked into peer
+# configs. It must resolve to the router's public IP, with UDP 51820
+# port-forwarded to 192.168.10.244. The MetalLB IP itself is not publicly
+# routable.
+#
+# Admin password hash lives in the wireguard-secret SopsSecret
+# (dev/manifests/secrets/wireguard-secret.yaml). Default password is
+# "changeme" - change it by editing the SopsSecret after deployment.
+#
+# Own `wireguard` namespace. Depends on sops-secrets-operator having synced
+# so wireguard-secret exists before the pod starts.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: wireguard
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://bjw-s-labs.github.io/helm-charts
+      chart: app-template
+      targetRevision: 5.0.1
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/wireguard-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: wireguard
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
