@@ -46,6 +46,22 @@ controllers:
           WG_DEFAULT_DNS: "1.1.1.1, 1.0.0.1"
           WG_ALLOWED_IPS: "0.0.0.0/0, ::/0"
           LANG: "en"
+          # Talos kernels have iptables compiled in via the nftables compatibility
+          # layer; the legacy iptable_nat module doesn't exist. Override wg-easy's
+          # default iptables calls to use iptables-nft so the NAT masquerade and
+          # FORWARD rules land in the nf_tables subsystem instead.
+          WG_PRE_UP: ""
+          WG_POST_UP: >-
+            iptables-nft -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE;
+            iptables-nft -A INPUT -p udp -m udp --dport 51820 -j ACCEPT;
+            iptables-nft -A FORWARD -i wg0 -j ACCEPT;
+            iptables-nft -A FORWARD -o wg0 -j ACCEPT;
+          WG_PRE_DOWN: ""
+          WG_POST_DOWN: >-
+            iptables-nft -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE;
+            iptables-nft -D INPUT -p udp -m udp --dport 51820 -j ACCEPT;
+            iptables-nft -D FORWARD -i wg0 -j ACCEPT;
+            iptables-nft -D FORWARD -o wg0 -j ACCEPT;
         # PASSWORD_HASH injected from wireguard-secret (SopsSecret).
         envFrom:
           - secretRef:
