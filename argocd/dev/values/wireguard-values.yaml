@@ -62,10 +62,8 @@ controllers:
             iptables-nft -D INPUT -p udp -m udp --dport 51820 -j ACCEPT;
             iptables-nft -D FORWARD -i wg0 -j ACCEPT;
             iptables-nft -D FORWARD -o wg0 -j ACCEPT;
-        # PASSWORD_HASH injected from wireguard-secret (SopsSecret).
-        envFrom:
-          - secretRef:
-              name: wireguard-secret
+        # No PASSWORD_HASH set - wg-easy runs without a password prompt.
+        # Authentik forward-auth on the Ingress is the only gate.
         # wg-easy manages the wg0 kernel interface.
         securityContext:
           capabilities:
