@@ -6,25 +6,31 @@
 # web UI lives at wg.lab.pcenicni.dev behind Authentik forward-auth; the
 # WireGuard tunnel is exposed via MetalLB LoadBalancer on UDP 51820.
 #
-# Admin password: stored as a bcrypt hash in the wireguard-secret SopsSecret
-# (injected as PASSWORD_HASH via envFrom). Default is "changeme" - replace
-# it by editing the SopsSecret with `sops argocd/dev/manifests/secrets/
-# wireguard-secret.yaml` and re-generating a hash with:
-#   docker run --rm ghcr.io/wg-easy/wg-easy:14 wgpw <new-password>
+# hostNetwork: the pod runs in the node's network namespace (not a pod
+# namespace). This is required because:
+#   1. The iptables nat table in a pod's own namespace doesn't work on Talos
+#      (iptable_nat module never loaded; Talos uses a compiled-in iptables
+#      path that is only accessible from the host namespace).
+#   2. The pod needs to reach 192.168.10.0/24 (MetalLB/LAN) to forward
+#      VPN peer traffic to Traefik - only reachable from the host namespace
+#      via ens18 (the node's LAN interface at 192.168.10.x).
+#   3. kube-proxy already manages iptables in the host namespace, so the
+#      MASQUERADE rules added by WG_POST_UP actually take effect.
 #
 # Peer config: WG_ALLOWED_IPS pushes a full-tunnel config to each peer
-# (0.0.0.0/0) with 1.1.1.1 as DNS. All peer traffic routes through the
-# cluster's internet connection. To access internal services by hostname
-# the peer's public DNS must resolve *.lab.pcenicni.dev (which it will via
-# the normal public DNS records).
+# (0.0.0.0/0) with 1.1.1.1 as DNS. All peer traffic exits via the node's
+# ens18 interface → router → internet / back to cluster services.
 #
 # Router setup required: UDP 51820 must be port-forwarded from the router's
 # WAN interface to 192.168.10.244 (MetalLB LoadBalancer IP). WG_HOST must
 # match the public hostname / DDNS name pointing at the router's public IP.
-#
-# NET_ADMIN is required for WireGuard's kernel interface (wg0). The
-# WireGuard module is built into the Talos kernel so SYS_MODULE is not
-# needed.
+
+defaultPodOptions:
+  # Share the node's network namespace. See header comment.
+  hostNetwork: true
+  # Must be ClusterFirstWithHostNet so the pod still resolves cluster DNS
+  # (e.g. authentik-outpost service IPs) despite hostNetwork.
+  dnsPolicy: ClusterFirstWithHostNet
 
 controllers:
   main:
@@ -40,31 +46,19 @@ controllers:
           # (grey cloud). UniFi: port-forward UDP 51820 WAN → 192.168.10.244.
           WG_HOST: "vpn.pcenicni.dev"
           WG_PORT: "51820"
-          # Full-tunnel: all peer traffic exits via the cluster. Peers can
-          # reach internal services through the Traefik ingress IP
-          # (192.168.10.240) once their DNS resolves *.lab.pcenicni.dev.
+          # Full-tunnel: all peer traffic exits via the node's ens18 interface.
           WG_DEFAULT_DNS: "1.1.1.1, 1.0.0.1"
           WG_ALLOWED_IPS: "0.0.0.0/0, ::/0"
           LANG: "en"
-          # Talos kernels have iptables compiled in via the nftables compatibility
-          # layer; the legacy iptable_nat module doesn't exist. Override wg-easy's
-          # default iptables calls to use iptables-nft so the NAT masquerade and
-          # FORWARD rules land in the nf_tables subsystem instead.
+          # ens18 is the Talos node's LAN interface (192.168.10.x/24).
+          # Using the host namespace means plain iptables works here (kube-proxy
+          # uses it). No iptables-nft override needed.
           WG_PRE_UP: ""
-          WG_POST_UP: >-
-            iptables-nft -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE;
-            iptables-nft -A INPUT -p udp -m udp --dport 51820 -j ACCEPT;
-            iptables-nft -A FORWARD -i wg0 -j ACCEPT;
-            iptables-nft -A FORWARD -o wg0 -j ACCEPT;
+          WG_POST_UP: "iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE; iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT;"
           WG_PRE_DOWN: ""
-          WG_POST_DOWN: >-
-            iptables-nft -t nat -D POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE;
-            iptables-nft -D INPUT -p udp -m udp --dport 51820 -j ACCEPT;
-            iptables-nft -D FORWARD -i wg0 -j ACCEPT;
-            iptables-nft -D FORWARD -o wg0 -j ACCEPT;
+          WG_POST_DOWN: "iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE; iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT;"
         # No PASSWORD_HASH set - wg-easy runs without a password prompt.
         # Authentik forward-auth on the Ingress is the only gate.
-        # wg-easy manages the wg0 kernel interface.
         securityContext:
           capabilities:
             add: ["NET_ADMIN"]
@@ -104,7 +98,6 @@ service:
     controller: main
     type: LoadBalancer
     annotations:
-      # Pinned to the top of the free range (Traefik=.240, Bambuddy=.245).
       metallb.io/loadBalancerIPs: 192.168.10.244
     ports:
       wg:
