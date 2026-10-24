@@ -51,12 +51,13 @@ controllers:
           WG_ALLOWED_IPS: "0.0.0.0/0, ::/0"
           LANG: "en"
           # ens18 is the Talos node's LAN interface (192.168.10.x/24).
-          # Using the host namespace means plain iptables works here (kube-proxy
-          # uses it). No iptables-nft override needed.
+          # kube-proxy also uses iptables-nft (not legacy) in the host namespace
+          # - the legacy iptable_nat module is never loaded on Talos. Use
+          # iptables-nft so the rules land in the nf_tables subsystem.
           WG_PRE_UP: ""
-          WG_POST_UP: "iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE; iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT;"
+          WG_POST_UP: "iptables-nft -t nat -A POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE; iptables-nft -A FORWARD -i wg0 -j ACCEPT; iptables-nft -A FORWARD -o wg0 -j ACCEPT;"
           WG_PRE_DOWN: ""
-          WG_POST_DOWN: "iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE; iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT;"
+          WG_POST_DOWN: "iptables-nft -t nat -D POSTROUTING -s 10.8.0.0/24 -o ens18 -j MASQUERADE; iptables-nft -D FORWARD -i wg0 -j ACCEPT; iptables-nft -D FORWARD -o wg0 -j ACCEPT;"
         # No PASSWORD_HASH set - wg-easy runs without a password prompt.
         # Authentik forward-auth on the Ingress is the only gate.
         securityContext:
