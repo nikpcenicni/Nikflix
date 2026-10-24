@@ -50,6 +50,10 @@ controllers:
           WG_DEFAULT_DNS: "1.1.1.1, 1.0.0.1"
           WG_ALLOWED_IPS: "0.0.0.0/0, ::/0"
           LANG: "en"
+          # 1420 = 1500 (Ethernet) - 80 (WireGuard overhead). Without an
+          # explicit MTU, large packets are fragmented on every hop, causing
+          # severe throughput degradation. This is pushed to all peer configs.
+          WG_MTU: "1420"
           # ens18 is the Talos node's LAN interface (192.168.10.x/24).
           # kube-proxy also uses iptables-nft (not legacy) in the host namespace
           # - the legacy iptable_nat module is never loaded on Talos. Use
@@ -84,7 +88,7 @@ controllers:
               periodSeconds: 10
         resources:
           requests:
-            cpu: 10m
+            cpu: 100m
             memory: 32Mi
           limits:
             memory: 128Mi
