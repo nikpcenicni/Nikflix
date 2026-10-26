@@ -34,3 +34,12 @@ reportsController:
       memory: 64Mi
     limits:
       memory: 128Mi
+
+# Bitnami removed bitnami/kubectl from Docker Hub; redirect to their registry.
+webhooksCleanup:
+  image:
+    registry: registry.bitnami.com
+
+policyReportsCleanup:
+  image:
+    registry: registry.bitnami.com
