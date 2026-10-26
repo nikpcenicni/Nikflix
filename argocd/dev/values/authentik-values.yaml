@@ -68,16 +68,6 @@ global:
     # exists in ../manifests/secrets/authentik-oauth-clients.yaml (SOPS
     # ciphertext, unused) - left in place rather than re-encrypting that file
     # just to delete an unused key; harmless since nothing reads it anymore.
-    - name: CHE_OAUTH_CLIENT_ID
-      valueFrom:
-        secretKeyRef:
-          name: authentik-oauth-clients
-          key: CHE_OAUTH_CLIENT_ID
-    - name: CHE_OAUTH_CLIENT_SECRET
-      valueFrom:
-        secretKeyRef:
-          name: authentik-oauth-clients
-          key: CHE_OAUTH_CLIENT_SECRET
     - name: VIKUNJA_OAUTH_CLIENT_ID
       valueFrom:
         secretKeyRef:
@@ -88,6 +78,18 @@ global:
         secretKeyRef:
           name: authentik-oauth-clients
           key: VIKUNJA_OAUTH_CLIENT_SECRET
+    # Harbor - add HARBOR_OAUTH_CLIENT_ID and HARBOR_OAUTH_CLIENT_SECRET to
+    # authentik-oauth-clients.yaml via `sops` before deploying harbor.yaml.
+    - name: HARBOR_OAUTH_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: authentik-oauth-clients
+          key: HARBOR_OAUTH_CLIENT_ID
+    - name: HARBOR_OAUTH_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: authentik-oauth-clients
+          key: HARBOR_OAUTH_CLIENT_SECRET
 
 # The remote-cluster service account (Kubernetes source-of-truth outposts)
 # is not used here - authentik only issues OIDC tokens for the apps below.
@@ -235,15 +237,6 @@ additionalObjects:
               name: "Kubernetes Admins"
               users:
                 - !Find [authentik_core.user, [username, akadmin]]
-          - model: authentik_core.group
-            id: group-che-users
-            identifiers:
-              name: "Che Users"
-            attrs:
-              name: "Che Users"
-              users:
-                - !Find [authentik_core.user, [username, akadmin]]
-
           # --- Grafana OAuth2/OIDC provider + application -----------------
           - model: authentik_providers_oauth2.oauth2provider
             id: provider-grafana
@@ -435,105 +428,6 @@ additionalObjects:
               # No meta_launch_url - this app has no dashboard to launch,
               # only a CLI-driven OIDC login flow.
 
-          # --- Eclipse Che OAuth2/OIDC provider + application --------------
-          # che-gateway's oauth-proxy container (unlike ArgoCD/Grafana/
-          # Headlamp's own native OIDC clients) strictly rejects login with
-          # "email in id_token isn't verified" unless the email_verified
-          # claim is explicitly true - confirmed live, first login attempt
-          # failed with exactly this error (oauth-proxy log:
-          # "Error redeeming code during OAuth2 callback: email in id_token
-          # (akadmin@lab.pcenicni.dev) isn't verified"). Authentik's own
-          # built-in "email" scope mapping hardcodes email_verified: False
-          # unconditionally (confirmed via `ak shell` - Authentik has no
-          # per-user email-verification tracking at all, so this can't be
-          # fixed by marking a user "verified"). che-operator's
-          # oauth_proxy.go has no CheCluster CR field to relax this check
-          # either (confirmed against its source - insecure_oidc_skip_
-          # issuer_verification is hardcoded true, but there's no
-          # insecure_oidc_allow_unverified_email equivalent). So this
-          # custom scope mapping overrides email_verified to true, scoped
-          # to Che's provider only - it does NOT touch the shared built-in
-          # "email" mapping ArgoCD/Grafana/Headlamp still use.
-          - model: authentik_providers_oauth2.scopemapping
-            id: scopemapping-che-email-verified
-            identifiers:
-              name: "Eclipse Che: OpenID 'email' (verified)"
-              scope_name: email
-            attrs:
-              name: "Eclipse Che: OpenID 'email' (verified)"
-              scope_name: email
-              description: "Same as the built-in email mapping, but always sets email_verified: true - Authentik has no real email-verification concept, and che-gateway's oauth-proxy hard-rejects login without it."
-              expression: |
-                return {
-                    "email": request.user.email,
-                    "email_verified": True,
-                }
-          - model: authentik_providers_oauth2.oauth2provider
-            id: provider-che
-            identifiers:
-              name: "Eclipse Che"
-            attrs:
-              name: "Eclipse Che"
-              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
-              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-              client_type: confidential
-              grant_types:
-                - authorization_code
-                - refresh_token
-              client_id: !Env CHE_OAUTH_CLIENT_ID
-              client_secret: !Env CHE_OAUTH_CLIENT_SECRET
-              include_claims_in_id_token: true
-              redirect_uris:
-                # Confirmed live from che-gateway's actual oauth-proxy.cfg
-                # (ConfigMap che-gateway-config-oauth-proxy in the
-                # eclipse-che namespace): redirect_url is under
-                # oauth-proxy's own proxy_prefix ("/oauth"), not
-                # che-server's "/api" prefix - the original "/api/oauth/
-                # callback" guess was wrong and caused a live
-                # "Redirect URI Error" on first login attempt.
-                - url: "https://che.lab.pcenicni.dev/oauth/callback"
-                  matching_mode: strict
-              signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
-              property_mappings:
-                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
-                - !KeyOf scopemapping-che-email-verified
-                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
-          - model: authentik_core.application
-            id: application-che
-            identifiers:
-              slug: che
-            attrs:
-              name: "Eclipse Che"
-              slug: che
-              provider: !KeyOf provider-che
-              policy_engine_mode: any
-              meta_launch_url: "https://che.lab.pcenicni.dev"
-          # Actual access gate for Che: authentik_policies.policybinding lets
-          # a PolicyBindingModel target (here, an Application) bind directly
-          # to a Group (instead of an expression/other Policy object) - a
-          # user must be a member of the bound group to pass, everyone else
-          # is denied at login. This is NOT a pattern copied from
-          # Grafana/ArgoCD/Headlamp above: none of those bind their own
-          # *Admins/*Viewers/*Editors group (or any policy) to their
-          # application, so today they have no login-gate at all - any
-          # authenticated authentik user can open them, and those groups
-          # only exist for RBAC/role-mapping after a successful login. This
-          # is a fresh precedent for gating access itself, applied to Che
-          # only, not a retrofit of the others. With a single binding,
-          # policy_engine_mode any vs all above is equivalent - left as any
-          # to match the sibling applications' field.
-          - model: authentik_policies.policybinding
-            id: policybinding-che-users
-            identifiers:
-              target: !KeyOf application-che
-              group: !KeyOf group-che-users
-            attrs:
-              target: !KeyOf application-che
-              group: !KeyOf group-che-users
-              enabled: true
-              order: 0
-              negate: false
-
           # --- Vikunja OAuth2/OIDC provider + application ------------------
           # Vikunja's OIDC callback URL pattern is /auth/openid/<provider.key>
           # (confirmed from frontend/src/helpers/redirectToProvider.ts in the
@@ -579,6 +473,78 @@ additionalObjects:
               provider: !KeyOf provider-vikunja
               policy_engine_mode: any
               meta_launch_url: "https://vikunja.lab.pcenicni.dev"
+
+          # --- Harbor container registry OAuth2/OIDC provider + application -
+          # Harbor reads the groups claim to assign admin rights - the custom
+          # harbor_groups scope mapping below exposes Authentik's ak_groups
+          # as a standard "groups" key so Harbor's OIDC_GROUPS_CLAIM=groups
+          # config (in ../../values/harbor-values.yaml) resolves correctly.
+          #
+          # PREREQUISITE: HARBOR_OAUTH_CLIENT_ID and HARBOR_OAUTH_CLIENT_SECRET
+          # must exist in the authentik-oauth-clients Secret before Authentik
+          # syncs this blueprint. Add them via:
+          #   sops argocd/dev/manifests/secrets/authentik-oauth-clients.yaml
+          - model: authentik_core.group
+            id: group-harbor-admins
+            identifiers:
+              name: "Harbor Admins"
+            attrs:
+              name: "Harbor Admins"
+              users:
+                - !Find [authentik_core.user, [username, akadmin]]
+          - model: authentik_core.group
+            id: group-harbor-developers
+            identifiers:
+              name: "Harbor Developers"
+            attrs:
+              name: "Harbor Developers"
+          - model: authentik_providers_oauth2.scopemapping
+            id: scopemapping-harbor-groups
+            identifiers:
+              name: "Harbor: groups claim"
+              scope_name: harbor_groups
+            attrs:
+              name: "Harbor: groups claim"
+              scope_name: harbor_groups
+              description: "Exposes ak_groups as 'groups' for Harbor OIDC admin-group mapping."
+              expression: |
+                return {
+                    "groups": [g.name for g in request.user.ak_groups.all()],
+                }
+          - model: authentik_providers_oauth2.oauth2provider
+            id: provider-harbor
+            identifiers:
+              name: "Harbor"
+            attrs:
+              name: "Harbor"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+              client_type: confidential
+              grant_types:
+                - authorization_code
+                - refresh_token
+              client_id: !Env HARBOR_OAUTH_CLIENT_ID
+              client_secret: !Env HARBOR_OAUTH_CLIENT_SECRET
+              include_claims_in_id_token: true
+              redirect_uris:
+                - url: "https://registry.lab.pcenicni.dev/c/oidc/callback"
+                  matching_mode: strict
+              signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+              property_mappings:
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+                - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+                - !KeyOf scopemapping-harbor-groups
+          - model: authentik_core.application
+            id: application-harbor
+            identifiers:
+              slug: harbor
+            attrs:
+              name: Harbor
+              slug: harbor
+              provider: !KeyOf provider-harbor
+              policy_engine_mode: any
+              meta_launch_url: "https://registry.lab.pcenicni.dev"
 
           # --- Media stack forward-auth (domain level) --------------------
           # Single Proxy Provider covers every *.lab.pcenicni.dev host via

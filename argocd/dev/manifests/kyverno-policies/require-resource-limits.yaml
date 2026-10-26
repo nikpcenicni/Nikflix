@@ -1,0 +1,42 @@
+# Audits pods that are missing container resource limits (memory).
+# Mode: Audit - generates PolicyReport entries but does not block
+# deployments. Switch to Enforce once all workloads declare limits.
+# CPU limits are intentionally not required - they throttle bursty
+# workloads unnecessarily; memory limits prevent OOM cascades.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require Resource Limits
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      All containers should declare a memory limit. Without one, a
+      runaway process can exhaust node memory and cause cascading OOM
+      kills across other workloads.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-memory-limit
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+      validate:
+        message: "Container '{{ element.name }}' has no memory limit. Add resources.limits.memory."
+        foreach:
+          - list: "request.object.spec.containers"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.resources.limits.memory || '' }}"
+                    operator: Equals
+                    value: ""

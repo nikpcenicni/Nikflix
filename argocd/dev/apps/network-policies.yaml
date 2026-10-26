@@ -1,0 +1,28 @@
+# Kubernetes NetworkPolicy resources - one file per namespace under
+# ../manifests/network-policies/. Requires a NetworkPolicy-capable CNI
+# (Cilium in this cluster). Each namespace file follows the same pattern:
+# default-deny-all + explicit allows for ingress/egress.
+#
+# Namespaces skipped intentionally:
+#   kube-system   - system-critical, too many implicit dependencies
+#   metallb-system - speaker DaemonSet uses hostNetwork
+#   wireguard      - pod uses hostNetwork, NetworkPolicy has no effect
+#   default        - only holds non-pod resources (Ingress, RBAC objects)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: network-policies
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/network-policies
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

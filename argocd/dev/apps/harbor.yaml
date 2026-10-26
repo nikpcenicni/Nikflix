@@ -1,0 +1,38 @@
+# Harbor container registry, values in ../values/harbor-values.yaml.
+# Provides a self-hosted OCI registry with Trivy vulnerability scanning,
+# Authentik OIDC login, and role-based push/pull access control.
+# Depends on secrets.yaml having synced first for harbor-secrets to exist
+# (see ../manifests/secrets/harbor-secrets.yaml).
+#
+# FIRST-RUN NOTE: before syncing this Application, add HARBOR_OAUTH_CLIENT_ID
+# and HARBOR_OAUTH_CLIENT_SECRET keys to
+# argocd/dev/manifests/secrets/authentik-oauth-clients.yaml via
+# `sops argocd/dev/manifests/secrets/authentik-oauth-clients.yaml`, and add
+# matching values to argocd/dev/manifests/secrets/harbor-secrets.yaml via
+# `sops argocd/dev/manifests/secrets/harbor-secrets.yaml`.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: harbor
+  namespace: argocd
+spec:
+  project: nikflix-security
+  sources:
+    - repoURL: https://helm.goharbor.io
+      chart: harbor
+      targetRevision: 1.16.0
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/harbor-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: harbor
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

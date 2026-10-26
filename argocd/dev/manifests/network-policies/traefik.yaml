@@ -1,0 +1,20 @@
+# traefik namespace - ingress controller.
+# Allows all ingress (external traffic on 80/443 + health probes) and all
+# egress (routes dynamically to every namespace backend). Restricting
+# traefik's egress would require enumerating every backend port across all
+# namespaces - impractical and fragile. The value here is preventing other
+# namespaces from accepting arbitrary traffic that does NOT come via traefik.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all
+  namespace: traefik
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - {}
+  egress:
+    - {}
