@@ -1,0 +1,32 @@
+# Cilium CNI, values in ../values/cilium-values.yaml.
+# Cilium was bootstrapped by hand before ArgoCD was installed; this
+# Application brings it under GitOps management.
+#
+# IMPORTANT: sync is intentionally manual (no automated syncPolicy).
+# Before triggering a sync, verify that cilium-values.yaml matches the
+# currently running Cilium config:
+#   helm -n kube-system get values cilium
+# Syncing with mismatched values will disrupt the live CNI.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cilium
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.cilium.io/
+      chart: cilium
+      targetRevision: 1.17.4
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/cilium-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false

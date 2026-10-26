@@ -1,0 +1,57 @@
+# monitoring namespace - Prometheus, Grafana, Alertmanager, Loki, Alloy,
+# prometheus-pve-exporter.
+# Prometheus scrapes metrics from every other namespace (pull model), so
+# egress to all namespaces is required. Alloy discovers pod logs via the
+# kube-apiserver and pushes to Loki in-namespace. Ingress is restricted to
+# traefik (Grafana UI) and in-namespace (Alloy → Loki, Prometheus → Grafana).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-ingress
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace-ingress
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# Egress is unrestricted: Prometheus must reach metric endpoints in every
+# namespace, Alloy needs the kube-apiserver, pve-exporter reaches Proxmox
+# (external), and Alertmanager may send webhooks to external services.
+# A future hardening step could enumerate scrape targets and restrict to
+# specific namespace/port combinations once the scrape config stabilises.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-egress
+  namespace: monitoring
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - {}

@@ -1,0 +1,100 @@
+# media namespace - sonarr, radarr, bazarr, prowlarr, sabnzbd, qbittorrent,
+# seerr, profilarr, media-forward-auth outpost.
+# Apps communicate with each other intra-namespace (sonarr → qbittorrent,
+# radarr → sabnzbd, etc.). Egress to the internet is required for indexers,
+# NZB/torrent downloads, and subtitle lookups. NFS storage is on LAN (192.168.x).
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-traefik-ingress
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-ingress
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+---
+# sonarr ↔ qbittorrent/sabnzbd/prowlarr, radarr ↔ qbittorrent/sabnzbd,
+# bazarr ↔ sonarr/radarr, seerr ↔ sonarr/radarr, media-forward-auth outpost.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# Internet access for indexers, download clients, subtitle providers, and
+# NFS storage on the LAN. qbittorrent also needs arbitrary ports for
+# peer connections (BitTorrent protocol).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-external-egress
+  namespace: media
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+    - to:
+        - ipBlock:
+            cidr: 192.168.0.0/16

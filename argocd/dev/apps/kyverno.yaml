@@ -1,0 +1,54 @@
+# Kyverno policy engine, values in ../values/kyverno-values.yaml.
+# Installs Kyverno's admission controller, background controller, cleanup
+# controller, and reports controller. ClusterPolicies live in the
+# kyverno-policies Application below.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno
+  namespace: argocd
+spec:
+  project: nikflix-security
+  sources:
+    - repoURL: https://kyverno.github.io/kyverno/
+      chart: kyverno
+      targetRevision: 3.3.3
+      helm:
+        valueFiles:
+          - $values/argocd/dev/values/kyverno-values.yaml
+    - repoURL: https://github.com/nikpcenicni/Nikflix.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+# Kyverno ClusterPolicies deployed as raw manifests. Depends on kyverno
+# having synced first so Kyverno's admission webhook CRDs exist.
+# See ../manifests/kyverno-policies/ for the individual policies.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kyverno-policies
+  namespace: argocd
+spec:
+  project: nikflix-security
+  source:
+    repoURL: https://github.com/nikpcenicni/Nikflix.git
+    targetRevision: main
+    path: argocd/dev/manifests/kyverno-policies
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kyverno
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

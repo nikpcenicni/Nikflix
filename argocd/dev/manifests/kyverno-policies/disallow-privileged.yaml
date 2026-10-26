@@ -1,0 +1,65 @@
+# Blocks pods with privileged containers or host namespace escalation
+# (hostPID, hostIPC). Mode: Enforce for privileged containers (clear
+# security boundary); Audit for host namespaces (wireguard and metallb
+# legitimately need hostNetwork - use a separate Enforce rule once those
+# workloads carry a Kyverno PolicyException).
+#
+# Excluded namespaces: kube-system (kubelet static pods, CNI DaemonSets),
+# metallb-system (speaker needs hostNetwork), kyverno (Kyverno itself).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-privileged-containers
+  annotations:
+    policies.kyverno.io/title: Disallow Privileged Containers
+    policies.kyverno.io/category: Pod Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Privileged containers have unrestricted host access. Any workload
+      that genuinely requires it must add a Kyverno PolicyException with
+      a justification comment and namespace restriction.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-privileged
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - metallb-system
+                - kyverno
+      validate:
+        message: "Privileged containers are not allowed. Add a PolicyException with justification if required."
+        pattern:
+          spec:
+            =(initContainers):
+              - =(securityContext):
+                  =(privileged): "false"
+            containers:
+              - =(securityContext):
+                  =(privileged): "false"
+    - name: disallow-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - metallb-system
+                - wireguard
+                - kyverno
+      validate:
+        message: "hostPID and hostIPC are not allowed. hostNetwork requires a PolicyException."
+        pattern:
+          spec:
+            =(hostPID): "false"
+            =(hostIPC): "false"
