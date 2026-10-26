@@ -1,10 +1,12 @@
 # Cilium CNI - values for the Cilium Helm chart.
 # See ../apps/cilium.yaml.
 #
-# VERIFY BEFORE SYNCING: run `helm -n kube-system get values cilium`
-# against the live cluster and reconcile any differences here first.
-# These are the standard Talos + Cilium values; the live chart may have
-# additional tuning.
+# MIGRATION FROM FLANNEL: the cluster currently runs kube-flannel. Before
+# syncing this Application, update the Talos machine configs to set the CNI
+# to "none" (custom), remove the flannel extension, and disable kube-proxy
+# (`proxy.disabled: true` in the machine config). Then sync with manual
+# approval. NetworkPolicy resources committed here will be enforced only after
+# Cilium is live.
 
 # Replace kube-proxy entirely - standard for Talos which does not run
 # kube-proxy by default when Cilium handles it.
