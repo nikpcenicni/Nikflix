@@ -1,0 +1,5 @@
+# Trivy misconfiguration ignore file.
+# Add AVD IDs here to suppress known-acceptable findings, one per line.
+# Format: AVD-KSV-XXXX  (optionally followed by a comment)
+# Example:
+#   AVD-KSV-0014  # traefik requires host network
