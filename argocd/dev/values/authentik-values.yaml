@@ -506,7 +506,7 @@ additionalObjects:
             attrs:
               name: "Harbor: groups claim"
               scope_name: harbor_groups
-              description: "Exposes ak_groups as 'groups' for Harbor OIDC admin-group mapping."
+              description: "Exposes ak_groups as groups list for Harbor OIDC admin-group detection."
               expression: |
                 return {
                     "groups": [g.name for g in request.user.ak_groups.all()],
