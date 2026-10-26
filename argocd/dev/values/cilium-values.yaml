@@ -1,0 +1,62 @@
+# Cilium CNI - values for the Cilium Helm chart.
+# See ../apps/cilium.yaml.
+#
+# VERIFY BEFORE SYNCING: run `helm -n kube-system get values cilium`
+# against the live cluster and reconcile any differences here first.
+# These are the standard Talos + Cilium values; the live chart may have
+# additional tuning.
+
+# Replace kube-proxy entirely - standard for Talos which does not run
+# kube-proxy by default when Cilium handles it.
+kubeProxyReplacement: true
+
+# Control plane VIP - needed for kube-proxy replacement to reach the
+# API server. Matches the cluster endpoint in development/talos/README.md.
+k8sServiceHost: 192.168.10.160
+k8sServicePort: "6443"
+
+# Talos mounts cgroupv2 at /sys/fs/cgroup and does not delegate the
+# mount to the container runtime - Cilium must not try to auto-mount it.
+cgroup:
+  autoMount:
+    enabled: false
+  hostRoot: /sys/fs/cgroup
+
+# Required Linux capabilities for the Cilium agent on Talos.
+securityContext:
+  capabilities:
+    ciliumAgent:
+      - CHOWN
+      - KILL
+      - NET_ADMIN
+      - NET_RAW
+      - IPC_LOCK
+      - SYS_ADMIN
+      - SYS_RESOURCE
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    cleanCiliumState:
+      - NET_ADMIN
+      - SYS_ADMIN
+      - SYS_RESOURCE
+
+ipam:
+  mode: kubernetes
+
+operator:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    memory: 1Gi

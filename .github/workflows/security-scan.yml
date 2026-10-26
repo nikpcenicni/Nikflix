@@ -1,0 +1,42 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Scans git history for accidentally committed secrets (API keys, tokens,
+  # passwords). Only verified findings (secrets that still work) cause a
+  # failure. Add .trufflehogignore entries for known-acceptable findings.
+  secret-scan:
+    name: TruffleHog secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: TruffleHog scan
+        uses: trufflesecurity/trufflehog@v3
+        with:
+          extra_args: --only-verified
+
+  # Scans ArgoCD manifests and Helm values for Kubernetes misconfigurations
+  # (missing security contexts, privileged containers, exposed secrets).
+  # exit-code 0: reports findings but does not fail the build.
+  # Switch to exit-code 1 once the existing findings backlog is resolved.
+  manifest-scan:
+    name: Trivy manifest misconfiguration scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: argocd/
+          exit-code: '0'
+          severity: HIGH,CRITICAL
+          format: table
+          trivyignores: .trivyignore

@@ -1,0 +1,148 @@
+# Harbor container registry - values for the Harbor Helm chart.
+# See ../apps/harbor.yaml. Ingress is managed by the chart itself (not
+# ingress-apps.yaml) because Harbor needs multi-path routing that the
+# chart's own ingress template handles cleanly.
+#
+# No plaintext secrets - admin password and OIDC credentials come from
+# the harbor-secrets Kubernetes Secret (see
+# ../manifests/secrets/harbor-secrets.yaml).
+
+externalURL: https://registry.lab.pcenicni.dev
+
+expose:
+  type: ingress
+  ingress:
+    hosts:
+      core: registry.lab.pcenicni.dev
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    certSource: secret
+    secret:
+      secretName: harbor-tls
+
+# Admin password from sops-secrets-operator-managed Secret.
+existingSecretAdminPassword: harbor-secrets
+existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+
+persistence:
+  enabled: true
+  # keep: PVCs are not deleted when the Application is pruned - prevents
+  # accidental data loss when ArgoCD re-syncs.
+  resourcePolicy: keep
+  persistentVolumeClaim:
+    registry:
+      storageClass: local-path
+      size: 50Gi
+    jobservice:
+      jobLog:
+        storageClass: local-path
+        size: 1Gi
+    database:
+      storageClass: local-path
+      size: 2Gi
+    redis:
+      storageClass: local-path
+      size: 1Gi
+    trivy:
+      storageClass: local-path
+      size: 5Gi
+
+trivy:
+  enabled: true
+  skipUpdate: false
+
+# Content trust (Notary) is deprecated upstream in favour of cosign.
+notary:
+  enabled: false
+
+core:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+  # OIDC config is seeded into the Harbor database on first run.
+  # AUTH_MODE=oidc_auth forces all non-admin logins through Authentik;
+  # the local admin account (HARBOR_ADMIN_PASSWORD) still works for
+  # bootstrap and break-glass access. Once seeded, changing these env
+  # vars requires updating Harbor's config via the admin UI or API.
+  #
+  # PREREQUISITE: HARBOR_OAUTH_CLIENT_ID and HARBOR_OAUTH_CLIENT_SECRET
+  # must be added to authentik-oauth-clients.yaml AND harbor-secrets.yaml
+  # via `sops` before this Application syncs for the first time.
+  extraEnvVars:
+    - name: AUTH_MODE
+      value: oidc_auth
+    - name: OIDC_NAME
+      value: authentik
+    - name: OIDC_ENDPOINT
+      value: https://auth.lab.pcenicni.dev/application/o/harbor/
+    - name: OIDC_CLIENT_ID
+      valueFrom:
+        secretKeyRef:
+          name: harbor-secrets
+          key: HARBOR_OIDC_CLIENT_ID
+    - name: OIDC_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: harbor-secrets
+          key: HARBOR_OIDC_CLIENT_SECRET
+    - name: OIDC_SCOPE
+      value: "openid,profile,email,harbor_groups"
+    - name: OIDC_GROUPS_CLAIM
+      value: groups
+    - name: OIDC_ADMIN_GROUP
+      value: "Harbor Admins"
+    - name: OIDC_AUTO_ONBOARD
+      value: "true"
+    - name: OIDC_USER_CLAIM
+      value: preferred_username
+    - name: OIDC_VERIFY_CERT
+      value: "true"
+
+jobservice:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+registry:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
+portal:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+
+redis:
+  type: internal
+  internal:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+database:
+  type: internal
+  internal:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        memory: 256Mi

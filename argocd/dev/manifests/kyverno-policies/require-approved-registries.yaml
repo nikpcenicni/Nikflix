@@ -1,0 +1,54 @@
+# Audits pods whose images come from outside the approved registry list.
+# Mode: Audit - generates PolicyReport entries but does not block
+# deployments. Switch validationFailureAction to Enforce once cluster
+# images have been migrated to Harbor (registry.lab.pcenicni.dev).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-approved-registries
+  annotations:
+    policies.kyverno.io/title: Approved Image Registries
+    policies.kyverno.io/category: Software Supply Chain
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Images must originate from an approved registry. Current allowlist:
+      registry.lab.pcenicni.dev (Harbor), ghcr.io, quay.io,
+      registry.k8s.io, docker.io. Switch to Enforce after all workloads
+      are pulling from Harbor.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: approved-registries
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+      validate:
+        message: "Image '{{ element.image }}' must come from an approved registry (registry.lab.pcenicni.dev, ghcr.io, quay.io, registry.k8s.io, docker.io)."
+        foreach:
+          - list: "request.object.spec.initContainers + request.object.spec.containers"
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.image }}"
+                    operator: NotEquals
+                    value: "registry.lab.pcenicni.dev*"
+                  - key: "{{ element.image }}"
+                    operator: NotEquals
+                    value: "ghcr.io*"
+                  - key: "{{ element.image }}"
+                    operator: NotEquals
+                    value: "quay.io*"
+                  - key: "{{ element.image }}"
+                    operator: NotEquals
+                    value: "registry.k8s.io*"
+                  - key: "{{ element.image }}"
+                    operator: NotEquals
+                    value: "docker.io*"
