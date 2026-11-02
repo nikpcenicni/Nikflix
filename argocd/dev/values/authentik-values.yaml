@@ -546,47 +546,190 @@ additionalObjects:
               policy_engine_mode: any
               meta_launch_url: "https://registry.lab.pcenicni.dev"
 
-          # --- Media stack forward-auth (domain level) --------------------
-          # Single Proxy Provider covers every *.lab.pcenicni.dev host via
-          # cookie_domain, rather than one provider per app - login once,
-          # reach sonarr/radarr/prowlarr/bazarr/qbittorrent/sabnzbd without
-          # re-authenticating. Seerr is deliberately not behind this -
-          # see argocd/README.md's "Media stack" section. The outpost this
-          # provider is assigned to is deployed by hand (raw manifests in
-          # ../manifests/authentik-outpost/, not authentik-managed), since
-          # this cluster has no Docker/Kubernetes service-connection set up
-          # for authentik to deploy outposts itself.
+          # --- Media stack forward-auth (per-app) ----------------------------
+          # One forward_single Proxy Provider per media app so each shows up
+          # as its own entry in the Authentik portal. The outpost routes by
+          # X-Forwarded-Host to the matching provider - the Traefik
+          # authentik-forward-auth middleware (../manifests/media-forward-auth/)
+          # does not need to change. Session re-auth across apps is silent
+          # (Authentik session already exists; only the per-app cookie is new).
+          # The outpost manifest lives in ../manifests/authentik-outpost/ -
+          # deployed as raw Kubernetes manifests, not authentik-managed, since
+          # this cluster has no Docker/Kubernetes service-connection configured.
+          #
+          # NOTE: providers uses !Find (a live DB lookup), not !KeyOf (a
+          # blueprint-internal reference) - !KeyOf inside a list item hits a
+          # real bug in authentik 2026.5.6's blueprint importer. !Find
+          # sidesteps it. `config.authentik_host` is also required by the
+          # serializer despite having a model-level default.
           - model: authentik_providers_proxy.proxyprovider
-            id: provider-media-forward-auth
+            id: provider-sonarr
             identifiers:
-              name: "Media stack forward auth"
+              name: "Sonarr"
             attrs:
-              name: "Media stack forward auth"
-              mode: forward_domain
-              cookie_domain: lab.pcenicni.dev
+              name: "Sonarr"
+              mode: forward_single
               external_host: "https://sonarr.lab.pcenicni.dev"
               authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
               invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
           - model: authentik_core.application
-            id: application-media-forward-auth
+            id: application-sonarr
             identifiers:
-              slug: media-stack
+              slug: sonarr
             attrs:
-              name: "Media stack"
-              slug: media-stack
-              provider: !KeyOf provider-media-forward-auth
+              name: Sonarr
+              slug: sonarr
+              provider: !KeyOf provider-sonarr
               policy_engine_mode: any
-          # NOTE: providers uses !Find (a live DB lookup), not !KeyOf (a
-          # blueprint-internal reference) - !KeyOf inside a list item for
-          # this field hits a real bug in authentik 2026.5.6's blueprint
-          # importer (crashes trying to log an EntryInvalidError while
-          # resolving it, instead of reporting the real error cleanly).
-          # !Find sidesteps it entirely. Verified directly against a live
-          # authentik shell (Importer.from_string(...).validate()) before
-          # settling on this - see git history for the debugging trail.
-          # `config.authentik_host` is also required by the serializer
-          # despite having a model-level default - leaving it out fails
-          # with "This field is required."
+              meta_launch_url: "https://sonarr.lab.pcenicni.dev"
+
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-radarr
+            identifiers:
+              name: "Radarr"
+            attrs:
+              name: "Radarr"
+              mode: forward_single
+              external_host: "https://radarr.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-radarr
+            identifiers:
+              slug: radarr
+            attrs:
+              name: Radarr
+              slug: radarr
+              provider: !KeyOf provider-radarr
+              policy_engine_mode: any
+              meta_launch_url: "https://radarr.lab.pcenicni.dev"
+
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-prowlarr
+            identifiers:
+              name: "Prowlarr"
+            attrs:
+              name: "Prowlarr"
+              mode: forward_single
+              external_host: "https://prowlarr.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-prowlarr
+            identifiers:
+              slug: prowlarr
+            attrs:
+              name: Prowlarr
+              slug: prowlarr
+              provider: !KeyOf provider-prowlarr
+              policy_engine_mode: any
+              meta_launch_url: "https://prowlarr.lab.pcenicni.dev"
+
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-bazarr
+            identifiers:
+              name: "Bazarr"
+            attrs:
+              name: "Bazarr"
+              mode: forward_single
+              external_host: "https://bazarr.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-bazarr
+            identifiers:
+              slug: bazarr
+            attrs:
+              name: Bazarr
+              slug: bazarr
+              provider: !KeyOf provider-bazarr
+              policy_engine_mode: any
+              meta_launch_url: "https://bazarr.lab.pcenicni.dev"
+
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-qbittorrent
+            identifiers:
+              name: "qBittorrent"
+            attrs:
+              name: "qBittorrent"
+              mode: forward_single
+              external_host: "https://qbittorrent.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-qbittorrent
+            identifiers:
+              slug: qbittorrent
+            attrs:
+              name: qBittorrent
+              slug: qbittorrent
+              provider: !KeyOf provider-qbittorrent
+              policy_engine_mode: any
+              meta_launch_url: "https://qbittorrent.lab.pcenicni.dev"
+
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-sabnzbd
+            identifiers:
+              name: "SABnzbd"
+            attrs:
+              name: "SABnzbd"
+              mode: forward_single
+              external_host: "https://sabnzbd.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-sabnzbd
+            identifiers:
+              slug: sabnzbd
+            attrs:
+              name: SABnzbd
+              slug: sabnzbd
+              provider: !KeyOf provider-sabnzbd
+              policy_engine_mode: any
+              meta_launch_url: "https://sabnzbd.lab.pcenicni.dev"
+
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-profilarr
+            identifiers:
+              name: "Profilarr"
+            attrs:
+              name: "Profilarr"
+              mode: forward_single
+              external_host: "https://profilarr.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-profilarr
+            identifiers:
+              slug: profilarr
+            attrs:
+              name: Profilarr
+              slug: profilarr
+              provider: !KeyOf provider-profilarr
+              policy_engine_mode: any
+              meta_launch_url: "https://profilarr.lab.pcenicni.dev"
+
+          - model: authentik_providers_proxy.proxyprovider
+            id: provider-seerr
+            identifiers:
+              name: "Seerr"
+            attrs:
+              name: "Seerr"
+              mode: forward_single
+              external_host: "https://seerr.lab.pcenicni.dev"
+              authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+              invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          - model: authentik_core.application
+            id: application-seerr
+            identifiers:
+              slug: seerr
+            attrs:
+              name: Seerr
+              slug: seerr
+              provider: !KeyOf provider-seerr
+              policy_engine_mode: any
+              meta_launch_url: "https://seerr.lab.pcenicni.dev"
+
           - model: authentik_outposts.outpost
             id: outpost-media-forward-auth
             identifiers:
@@ -597,4 +740,11 @@ additionalObjects:
               config:
                 authentik_host: "https://auth.lab.pcenicni.dev"
               providers:
-                - !Find [authentik_providers_proxy.proxyprovider, [name, "Media stack forward auth"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "Sonarr"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "Radarr"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "Prowlarr"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "Bazarr"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "qBittorrent"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "SABnzbd"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "Profilarr"]]
+                - !Find [authentik_providers_proxy.proxyprovider, [name, "Seerr"]]
