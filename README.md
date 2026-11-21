@@ -1,6 +1,6 @@
 # Nikflix
 
-[![Docs site](https://github.com/nikpcenicni/Nikflix/actions/workflows/pages.yml/badge.svg)](https://nikpcenicni.github.io/Nikflix/)
+[![Docs site](https://github.com/nikpcenicni/Nikflix/actions/workflows/pages.yml/badge.svg)](https://pcenicni.dev/Nikflix/)
 [![Security Scan](https://github.com/nikpcenicni/Nikflix/actions/workflows/security-scan.yml/badge.svg)](https://github.com/nikpcenicni/Nikflix/actions/workflows/security-scan.yml)
 
 Nikflix is a home lab defined as code. A three-node Proxmox cluster hosts
@@ -8,12 +8,12 @@ Talos Linux VMs that run Kubernetes. ArgoCD deploys every workload from
 this repository: the platform (ingress, TLS, SSO, secrets, monitoring),
 a self-hosted media stack, and a few household apps.
 
-**Documentation site: <https://nikpcenicni.github.io/Nikflix/>**
+**Documentation site: <https://pcenicni.dev/Nikflix/>**
 
 The site is the place to start if you want to:
 
-- [build your own copy of the lab](https://nikpcenicni.github.io/Nikflix/guide/), step by step, or
-- [recover the lab after a failure](https://nikpcenicni.github.io/Nikflix/disaster-recovery/).
+- [build your own copy of the lab](https://pcenicni.dev/Nikflix/guide/), step by step, or
+- [recover the lab after a failure](https://pcenicni.dev/Nikflix/disaster-recovery/).
 
 The site source is in [`docs/`](docs). It publishes from `main` through
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
@@ -46,7 +46,7 @@ The site source is in [`docs/`](docs). It publishes from `main` through
    ArgoCD, apply `argocd/bootstrap/root-app-{shared,dev}.yaml`.
 6. **Apps** - set up authentik and each app's own settings.
 
-The [build guide](https://nikpcenicni.github.io/Nikflix/guide/) gives
+The [build guide](https://pcenicni.dev/Nikflix/guide/) gives
 the full commands and checks for each step.
 
 ## What is running
@@ -61,7 +61,7 @@ the full commands and checks for each step.
   cluster.
 - **Other:** Homepage, Vikunja, OpenGym, Spoolman, Bambuddy.
 
-The [applications reference](https://nikpcenicni.github.io/Nikflix/reference/applications/)
+The [applications reference](https://pcenicni.dev/Nikflix/reference/applications/)
 lists every Application with its namespace, URL, and login method.
 
 ## Networking
@@ -96,7 +96,7 @@ network on a different switch:
 | `192.168.1.127` | Pi-hole. Wildcard `*.lab.pcenicni.dev` → `192.168.10.240` |
 | `192.168.50.105` | Interim NAS (NFS for the media stack) |
 
-The [networking reference](https://nikpcenicni.github.io/Nikflix/reference/networking/)
+The [networking reference](https://pcenicni.dev/Nikflix/reference/networking/)
 has the full IP plan, the per-switch port table, and the DNS setup.
 
 ## Secrets
@@ -104,7 +104,7 @@ has the full IP plan, the per-switch port table, and the DNS setup.
 Secrets in git are SOPS-encrypted with age (see [`.sops.yaml`](.sops.yaml)).
 The age private key, the Talos base configs, `talosconfig`, and Terraform
 state are **never** in git. Keep them outside the lab, as listed in
-[disaster recovery](https://nikpcenicni.github.io/Nikflix/disaster-recovery/#what-you-must-have-before-a-disaster).
+[disaster recovery](https://pcenicni.dev/Nikflix/disaster-recovery/#what-you-must-have-before-a-disaster).
 
 ## Local docs preview
 

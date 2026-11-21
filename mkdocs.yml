@@ -1,6 +1,6 @@
 site_name: Nikflix
 site_description: Build, operate, and recover the Nikflix home lab - Proxmox, Talos, Kubernetes, and ArgoCD.
-site_url: https://nikpcenicni.github.io/Nikflix/
+site_url: https://pcenicni.dev/Nikflix/
 repo_url: https://github.com/nikpcenicni/Nikflix
 repo_name: nikpcenicni/Nikflix
 edit_uri: edit/main/docs/
