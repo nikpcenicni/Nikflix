@@ -12,8 +12,8 @@ a self-hosted media stack, and a few household apps.
 
 The site is the place to start if you want to:
 
-- [build your own copy of the lab](https://pcenicni.dev/Nikflix/guide/), step by step, or
-- [recover the lab after a failure](https://pcenicni.dev/Nikflix/disaster-recovery/).
+- [build your own copy of the lab](https://pcenicni.dev/Nikflix/tutorials/build/), step by step, or
+- [recover the lab after a failure](https://pcenicni.dev/Nikflix/operations/disaster-recovery/).
 
 The site source is in [`docs/`](docs). It publishes from `main` through
 [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
@@ -46,7 +46,7 @@ The site source is in [`docs/`](docs). It publishes from `main` through
    ArgoCD, apply `argocd/bootstrap/root-app-{shared,dev}.yaml`.
 6. **Apps** - set up authentik and each app's own settings.
 
-The [build guide](https://pcenicni.dev/Nikflix/guide/) gives
+The [build guide](https://pcenicni.dev/Nikflix/tutorials/build/) gives
 the full commands and checks for each step.
 
 ## What is running
@@ -61,7 +61,7 @@ the full commands and checks for each step.
   cluster.
 - **Other:** Homepage, Vikunja, OpenGym, Spoolman, Bambuddy.
 
-The [applications reference](https://pcenicni.dev/Nikflix/reference/applications/)
+The [applications reference](https://pcenicni.dev/Nikflix/current/apps/)
 lists every Application with its namespace, URL, and login method.
 
 ## Networking
@@ -104,7 +104,7 @@ has the full IP plan, the per-switch port table, and the DNS setup.
 Secrets in git are SOPS-encrypted with age (see [`.sops.yaml`](.sops.yaml)).
 The age private key, the Talos base configs, `talosconfig`, and Terraform
 state are **never** in git. Keep them outside the lab, as listed in
-[disaster recovery](https://pcenicni.dev/Nikflix/disaster-recovery/#what-you-must-have-before-a-disaster).
+[disaster recovery](https://pcenicni.dev/Nikflix/operations/disaster-recovery/#what-you-must-have-before-a-disaster).
 
 ## Local docs preview
 

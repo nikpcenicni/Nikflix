@@ -6,7 +6,7 @@ assumes this step is complete. It does not configure switches.
 ## Procedure
 
 1. In UniFi, create these networks. Use the subnets in
-   [Networking](../reference/networking.md#vlans):
+   [Networking](../../reference/networking.md#vlans):
 
     | Name | VLAN ID | Subnet | DHCP |
     |---|---|---|---|
@@ -15,7 +15,7 @@ assumes this step is complete. It does not configure switches.
     | Corosync | 100 | `10.10.100.0/24` | Off |
 
 2. Set the native VLAN of each node-facing port, as in the
-   [port map](../reference/networking.md#physical-port-map):
+   [port map](../../reference/networking.md#physical-port-map):
 
     - Gateway LAN ports for `nic0` → native VLAN **100**.
     - Flex switch #1 ports for `nic1` → native VLAN **10**.
@@ -25,7 +25,7 @@ assumes this step is complete. It does not configure switches.
    to Flex #1, `nic2` (2.5GbE USB) to Flex #2.
 
 4. Record the port numbers in the
-   [per-switch table](../reference/networking.md#per-switch-port-assignments).
+   [per-switch table](../../reference/networking.md#per-switch-port-assignments).
 
 5. In your DNS server, add a wildcard that points the lab domain at
    Traefik's future address. For Pi-hole v6, add this line to

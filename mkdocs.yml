@@ -1,42 +1,88 @@
 site_name: Nikflix
-site_description: Build, operate, and recover the Nikflix home lab - Proxmox, Talos, Kubernetes, and ArgoCD.
+site_description: Build, run, and recover the Nikflix home lab - Proxmox, Talos, Kubernetes, and ArgoCD.
 site_url: https://pcenicni.dev/Nikflix/
 repo_url: https://github.com/nikpcenicni/Nikflix
 repo_name: nikpcenicni/Nikflix
 edit_uri: edit/main/docs/
+copyright: Nikflix home lab &middot; configuration as code
 
 theme:
   name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+    admonition:
+      note: material/information-outline
+  font:
+    text: Inter
+    code: JetBrains Mono
   features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.tracking
     - navigation.sections
     - navigation.indexes
     - navigation.top
     - navigation.footer
-    - content.code.copy
-    - content.action.edit
+    - toc.follow
+    - search.suggest
     - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
 
+extra_css:
+  - stylesheets/extra.css
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nikpcenicni/Nikflix
+      name: Source on GitHub
+
 markdown_extensions:
+  - abbr
   - admonition
   - attr_list
   - def_list
+  - footnotes
+  - md_in_html
   - tables
   - toc:
       permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.tasklist:
       custom_checkbox: true
   - pymdownx.superfences:
@@ -47,20 +93,41 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Build the lab:
-      - guide/index.md
-      - 0. Prerequisites: guide/prerequisites.md
-      - 1. Network: guide/network.md
-      - 2. Proxmox nodes: guide/proxmox.md
-      - 3. Talos VMs: guide/vms.md
-      - 4. Talos and Kubernetes: guide/talos.md
-      - 5. GitOps and secrets: guide/gitops.md
-      - 6. Applications: guide/apps.md
-  - Disaster recovery: disaster-recovery.md
+  - Current stack:
+      - current/index.md
+      - Hardware: current/hardware.md
+      - Platform: current/platform.md
+      - Security: current/security.md
+      - Apps: current/apps.md
+  - Future stack:
+      - future/index.md
+      - Production cluster: future/production.md
+  - Tutorials:
+      - tutorials/index.md
+      - Build the lab:
+          - tutorials/build/index.md
+          - 0. Prerequisites: tutorials/build/prerequisites.md
+          - 1. Network: tutorials/build/network.md
+          - 2. Proxmox nodes: tutorials/build/proxmox.md
+          - 3. Talos VMs: tutorials/build/vms.md
+          - 4. Talos and Kubernetes: tutorials/build/talos.md
+          - 5. GitOps and secrets: tutorials/build/gitops.md
+          - 6. Applications: tutorials/build/apps.md
+      - Everyday tasks:
+          - Add an app: tutorials/add-an-app.md
+          - Manage secrets: tutorials/secrets.md
+          - Add a Proxmox node: tutorials/add-a-node.md
+          - Upgrade Talos: tutorials/upgrade-talos.md
+  - Operations:
+      - operations/index.md
+      - Disaster recovery: operations/disaster-recovery.md
+      - Maintenance: operations/maintenance.md
   - Reference:
-      - Networking and port map: reference/networking.md
-      - Applications: reference/applications.md
-  - Architecture:
-      - Proxmox cluster: architecture/proxmox.md
-      - Talos and Kubernetes: architecture/talos.md
-      - Media stack: architecture/media-stack.md
+      - reference/index.md
+      - Networking: reference/networking.md
+      - Repository layout: reference/repository.md
+      - Architecture:
+          - Proxmox cluster: reference/architecture/proxmox.md
+          - Talos and Kubernetes: reference/architecture/talos.md
+          - Media stack: reference/architecture/media-stack.md
+  - Questions: faq.md

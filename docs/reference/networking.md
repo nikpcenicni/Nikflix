@@ -2,7 +2,7 @@
 
 This page is the reference for every network, address, and physical
 connection the lab uses. The
-[Proxmox cluster architecture](../architecture/proxmox.md) page explains
+[Proxmox cluster architecture](architecture/proxmox.md) page explains
 why the network has this design.
 
 ## VLANs
@@ -48,7 +48,7 @@ above, or reserve them outside the DHCP range.
 | talos-dev-worker-argon | 206 | argon | worker | `192.168.10.126` | `192.168.80.126` |
 
 The production design reserves `192.168.10.101`-`.106` and
-`192.168.80.101`-`.106`. See [Talos and Kubernetes](../architecture/talos.md#cluster-topology).
+`192.168.80.101`-`.106`. See [Talos and Kubernetes](architecture/talos.md#cluster-topology).
 
 ### Cluster and service addresses
 

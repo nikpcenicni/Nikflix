@@ -1,59 +1,116 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
+<div class="nf-hero" markdown>
+
 # Nikflix
 
-Nikflix is a home lab defined as code. A three-node Proxmox cluster hosts
-Talos Linux VMs. The VMs run Kubernetes. ArgoCD deploys every
-application on the cluster from this git repository.
+A home lab defined as code. Proxmox hosts Talos Linux VMs, the VMs run
+Kubernetes, and ArgoCD deploys everything on the cluster from git. These
+docs explain how it works, how to build your own, and how to bring it
+back after a failure.
 
-This site has two jobs:
+[Explore the stack :material-arrow-right:](current/index.md){ .md-button .md-button--primary }
+[Build your own](tutorials/build/index.md){ .md-button }
+[Disaster recovery](operations/disaster-recovery.md){ .md-button }
 
-1. **Build a copy of the lab.** Follow [Build the lab](guide/index.md)
-   from start to finish, on your own hardware.
-2. **Recover the lab after a failure.** Go to
-   [Disaster recovery](disaster-recovery.md). It tells you which secrets
-   you must have, and in which order to rebuild.
+</div>
 
-## The stack, layer by layer
+<div class="nf-stats" markdown>
+<div class="nf-stat"><b>3</b><span>Proxmox nodes</span></div>
+<div class="nf-stat"><b>6</b><span>Talos VMs</span></div>
+<div class="nf-stat"><b>40</b><span>ArgoCD Applications</span></div>
+<div class="nf-stat"><b>3</b><span>Isolated VLANs</span></div>
+<div class="nf-stat"><b>0</b><span>Plaintext secrets in git</span></div>
+</div>
+
+## Where to go
+
+<div class="grid cards" markdown>
+
+-   :material-layers-triple:{ .lg .middle } **Current stack**
+
+    ---
+
+    What runs today: hardware, network, Kubernetes platform, security
+    controls, and every app.
+
+    [:octicons-arrow-right-24: Current stack](current/index.md)
+
+-   :material-rocket-launch-outline:{ .lg .middle } **Future stack**
+
+    ---
+
+    The roadmap: a six-node production cluster, Longhorn storage,
+    Cilium, and external access.
+
+    [:octicons-arrow-right-24: Roadmap](future/index.md)
+
+-   :material-school-outline:{ .lg .middle } **Tutorials**
+
+    ---
+
+    Build the lab from bare metal, then everyday tasks: add an app,
+    manage secrets, add a node, upgrade Talos.
+
+    [:octicons-arrow-right-24: Tutorials](tutorials/index.md)
+
+-   :material-lifebuoy:{ .lg .middle } **Operations**
+
+    ---
+
+    Disaster recovery runbooks, what to back up, and routine
+    maintenance.
+
+    [:octicons-arrow-right-24: Operations](operations/index.md)
+
+-   :material-lan:{ .lg .middle } **Reference**
+
+    ---
+
+    IP plan, port map, DNS, repository layout, and the full
+    architecture write-ups.
+
+    [:octicons-arrow-right-24: Reference](reference/index.md)
+
+-   :material-frequently-asked-questions:{ .lg .middle } **Questions**
+
+    ---
+
+    FAQ, and the design decisions that are still open.
+
+    [:octicons-arrow-right-24: Questions](faq.md)
+
+</div>
+
+## The stack at a glance
 
 ```mermaid
-flowchart TB
-    subgraph net["Network (UniFi)"]
-        V10["VLAN 10 · management<br/>192.168.10.0/24"]
-        V80["VLAN 80 · storage<br/>192.168.80.0/24"]
-        V100["VLAN 100 · corosync<br/>10.10.100.0/24"]
+flowchart LR
+    subgraph net["Network · UniFi"]
+        V["VLAN 10 mgmt<br/>VLAN 80 storage<br/>VLAN 100 corosync"]
     end
-    subgraph pve["Proxmox VE cluster 'noble' (Ansible)"]
-        He[helium] --- Ne[neon] --- Ar[argon]
+    subgraph pve["Proxmox 'noble'"]
+        H["helium · neon · argon"]
     end
-    subgraph vms["Talos VMs (Terraform + talosctl)"]
-        CP["3 × control plane"]
-        W["3 × worker"]
+    subgraph k8s["Kubernetes 'dev-noble'"]
+        T["3 control plane<br/>3 worker"]
     end
-    subgraph k8s["Kubernetes 'dev-noble' (ArgoCD)"]
-        Plat["Platform: MetalLB, Traefik, cert-manager,<br/>authentik, SOPS, Kyverno, monitoring"]
-        Apps["Apps: media stack, Homepage,<br/>Vikunja, Spoolman, ..."]
+    subgraph git["GitOps"]
+        A["ArgoCD<br/>40 Applications"]
     end
-    net --> pve --> vms --> k8s
-    Plat --> Apps
+    net -->|Ansible| pve -->|Terraform + talosctl| k8s
+    git -->|syncs| k8s
 ```
 
-| Layer | Tool | Repo path | Guide step |
-|---|---|---|---|
-| Network | UniFi (by hand) | - | [1. Network](guide/network.md) |
-| Proxmox hosts | Ansible | `ansible/` | [2. Proxmox nodes](guide/proxmox.md) |
-| VM shells | Terraform (`bpg/proxmox`) | `development/terraform/` | [3. Talos VMs](guide/vms.md) |
-| OS and Kubernetes | `talosctl` | `development/talos/` | [4. Talos and Kubernetes](guide/talos.md) |
-| Workloads | ArgoCD + SOPS | `argocd/` | [5. GitOps](guide/gitops.md), [6. Applications](guide/apps.md) |
-
-## Current state
-
-- **Development cluster (`dev-noble`)** - runs today. Six Talos VMs, two
-  per Proxmox node. Every procedure on this site uses this cluster.
-- **Production cluster** - a design only. It needs three more Proxmox
-  nodes (`krypton`, `xenon`, `radon`). See
-  [Talos and Kubernetes](architecture/talos.md).
-
-!!! note "Adapting this to your own lab"
-    The repository uses real addresses, a real domain
-    (`lab.pcenicni.dev`), and a real git remote. To build your own copy,
-    fork the repository and replace these values. Each guide step has a
-    **Change for your lab** box that lists them.
+| Layer | Tool | Status |
+|---|---|---|
+| Network | UniFi, configured by hand | <span class="pill ok">Running</span> |
+| Proxmox cluster `noble` | Ansible | <span class="pill ok">Running</span> |
+| Development cluster `dev-noble` | Terraform + Talos | <span class="pill ok">Running</span> |
+| Platform and apps | ArgoCD + SOPS | <span class="pill ok">Running</span> |
+| Production cluster | Terraform + Talos | <span class="pill plan">Planned</span> |
+| Longhorn storage | ArgoCD | <span class="pill plan">Planned</span> |
