@@ -12,6 +12,7 @@ a self-hosted media stack, and a few household apps.
 
 The site is the place to start if you want to:
 
+- [explore the stack](https://pcenicni.dev/Nikflix/explore/) on an interactive map generated from this repo,
 - [build your own copy of the lab](https://pcenicni.dev/Nikflix/tutorials/build/), step by step, or
 - [recover the lab after a failure](https://pcenicni.dev/Nikflix/operations/disaster-recovery/).
 
@@ -110,5 +111,6 @@ state are **never** in git. Keep them outside the lab, as listed in
 
 ```sh
 pip install -r docs/requirements.txt
+python scripts/gen_stack.py   # builds docs/explore/stack.json for the stack map
 mkdocs serve
 ```
