@@ -59,7 +59,7 @@ The cluster keeps running with two of three control-plane nodes.
    in `development/terraform/`. Check the exact resource address with
    `terraform state list`.
 3. Apply the saved config with its patch, as in
-   [step 4.3](guide/talos.md#procedure). **Do not run `talosctl bootstrap`.**
+   [step 4.3](../tutorials/build/talos.md#procedure). **Do not run `talosctl bootstrap`.**
    The node joins the existing etcd.
 4. Pods that used `local-path` volumes on that node start with empty
    data. Restore their data from the app's own backup.
@@ -70,7 +70,7 @@ The Proxmox cluster keeps quorum with two of three nodes.
 
 1. On a healthy node, remove the dead node: `pvecm delnode <name>`.
 2. Install Proxmox VE on the new hardware, with the **same hostname and
-   management IP**. Cable it as in the [port map](reference/networking.md#per-node-cabling).
+   management IP**. Cable it as in the [port map](../reference/networking.md#per-node-cabling).
 3. If the USB NIC has a new MAC address, update
    `pve_nic2_mac_override` (or add it) in
    `ansible/inventory/host_vars/<name>.yml`.
@@ -93,14 +93,14 @@ is gone.
 
 1. **If you still have** `controlplane.yaml`, `worker.yaml`, and
    `talosconfig`: re-create the VMs with Terraform (`terraform apply`, or
-   destroy and apply), then do [step 4](guide/talos.md) from 4.2. Skip
+   destroy and apply), then do [step 4](../tutorials/build/talos.md) from 4.2. Skip
    `talosctl gen config`. Bootstrap once.
-2. **If you lost them:** run [step 4](guide/talos.md) in full. Then save
+2. **If you lost them:** run [step 4](../tutorials/build/talos.md) in full. Then save
    the new files right away.
-3. Do [step 5](guide/gitops.md) with your **saved** `age-key.txt`. Do not
+3. Do [step 5](../tutorials/build/gitops.md) with your **saved** `age-key.txt`. Do not
    generate a new key, because the encrypted files in git need the old one.
 4. Wait for ArgoCD to sync every Application.
-5. Do [step 6](guide/apps.md). authentik's blueprint re-creates its
+5. Do [step 6](../tutorials/build/apps.md). authentik's blueprint re-creates its
    providers, groups, and applications. You must set the `akadmin`
    password again, re-add your users, and generate a new outpost token
    (`sops` the new value into `authentik-outpost-media-token.yaml` and
@@ -109,10 +109,10 @@ is gone.
 
 ## D. Full rebuild
 
-Do the whole [Build the lab](guide/index.md) guide, in order, with these
+Do the whole [Build the lab](../tutorials/build/index.md) guide, in order, with these
 changes:
 
-- Step 1: use the [port map](reference/networking.md#physical-port-map)
+- Step 1: use the [port map](../reference/networking.md#physical-port-map)
   and IP plan exactly, so no config in git needs to change.
 - Step 4: restore your saved Talos files instead of `gen config`, if you
   have them. New VMs with the old configs make a cluster that your old
@@ -123,9 +123,9 @@ changes:
 ## E. Network replacement
 
 1. Re-create VLANs 10, 80, and 100 with the same subnets
-   ([VLANs](reference/networking.md#vlans)).
+   ([VLANs](../reference/networking.md#vlans)).
 2. Set every node-facing port to the **native** VLAN in the
-   [port map](reference/networking.md#per-node-cabling). Tagged ports
+   [port map](../reference/networking.md#per-node-cabling). Tagged ports
    do not work.
 3. Re-add the Pi-hole wildcard
    `address=/.lab.pcenicni.dev/192.168.10.240`.
@@ -159,4 +159,4 @@ work.
 - [ ] `ssh -i <saved key> root@192.168.10.10 pvecm status` works
 - [ ] `terraform plan` in `development/terraform/` shows no changes
 - [ ] The NAS has an app backup newer than 7 days for each important app
-- [ ] The per-switch port table on the [networking page](reference/networking.md#per-switch-port-assignments) matches the UniFi console
+- [ ] The per-switch port table on the [networking page](../reference/networking.md#per-switch-port-assignments) matches the UniFi console

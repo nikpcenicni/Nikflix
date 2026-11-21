@@ -14,5 +14,5 @@ steps in order. Each step needs the previous step to be complete.
 | [6. Applications](apps.md) | SSO, ingress, and apps configured | 1 h+ |
 
 !!! tip "Recovering, not building?"
-    Read [Disaster recovery](../disaster-recovery.md) first. It tells you
+    Read [Disaster recovery](../../operations/disaster-recovery.md) first. It tells you
     which steps you can skip and which saved files to restore at each step.

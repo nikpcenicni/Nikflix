@@ -41,7 +41,7 @@ brew install ansible terraform siderolabs/tap/talosctl kubectl sops age
 
 You create these during the build. **Git never stores them.** Save every
 one in a password manager as you create it. You need all of them for
-[disaster recovery](../disaster-recovery.md).
+[disaster recovery](../../operations/disaster-recovery.md).
 
 | Secret | Created in step |
 |---|---|

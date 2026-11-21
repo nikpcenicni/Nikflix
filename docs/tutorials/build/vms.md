@@ -44,7 +44,7 @@ shows Talos in maintenance mode with an IP address from DHCP.
 !!! warning "Terraform state is local"
     `*.tfstate` is git-ignored and lives only on the workstation that ran
     `terraform apply`. Back up `development/terraform/terraform.tfstate`,
-    or be ready to [import or recreate the VMs](../disaster-recovery.md#terraform-state-is-lost).
+    or be ready to [import or recreate the VMs](../../operations/disaster-recovery.md#terraform-state-is-lost).
 
 !!! note "Change for your lab"
     VM sizes, IDs, nodes, and planned IPs are in
