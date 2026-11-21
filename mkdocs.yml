@@ -1,0 +1,66 @@
+site_name: Nikflix
+site_description: Build, operate, and recover the Nikflix home lab - Proxmox, Talos, Kubernetes, and ArgoCD.
+site_url: https://pcenicni.dev/Nikflix/
+repo_url: https://github.com/nikpcenicni/Nikflix
+repo_name: nikpcenicni/Nikflix
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Build the lab:
+      - guide/index.md
+      - 0. Prerequisites: guide/prerequisites.md
+      - 1. Network: guide/network.md
+      - 2. Proxmox nodes: guide/proxmox.md
+      - 3. Talos VMs: guide/vms.md
+      - 4. Talos and Kubernetes: guide/talos.md
+      - 5. GitOps and secrets: guide/gitops.md
+      - 6. Applications: guide/apps.md
+  - Disaster recovery: disaster-recovery.md
+  - Reference:
+      - Networking and port map: reference/networking.md
+      - Applications: reference/applications.md
+  - Architecture:
+      - Proxmox cluster: architecture/proxmox.md
+      - Talos and Kubernetes: architecture/talos.md
+      - Media stack: architecture/media-stack.md

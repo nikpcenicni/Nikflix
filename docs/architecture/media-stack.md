@@ -2,7 +2,11 @@
 
 This document describes the application layer on top of
 [talos.md](talos.md): the *arr stack and Jellyfin. Like talos.md, this
-document is a target-state design. None of this is deployed yet.
+document is a target-state design. The Talos-side apps (Seerr, Sonarr,
+Radarr, Prowlarr, qBittorrent, SABnzbd, Bazarr, and Profilarr) already run
+on the development cluster, with interim storage. See the
+[argocd README's media stack section](https://github.com/nikpcenicni/Nikflix/blob/main/argocd/README.md#media-stack)
+for what runs today and how it differs from this design.
 
 One component runs outside the Talos cluster's scope. Jellyfin runs on a
 Mac Mini, not as a Talos workload. Hardware-accelerated transcoding,
@@ -29,7 +33,7 @@ manages these workloads through GitOps.
 | Profilarr | Configuration management for Sonarr/Radarr custom formats and quality profiles | Talos | No |
 | Jellyfin | Media server — transcodes and streams the finished library to clients | **Mac Mini** | No |
 
-[Homepage](../../argocd/README.md#homepage) gives every app in this table
+[Homepage](https://github.com/nikpcenicni/Nikflix/blob/main/argocd/README.md#homepage) gives every app in this table
 its own status tile, alongside the rest of the cluster's admin tools - it
 is a cluster-wide dashboard, not a media-stack component, so it isn't
 covered further here.
