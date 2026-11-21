@@ -17,8 +17,8 @@ layers are declarative. Neither layer needs hand administration.
 An interim development cluster already exists as a scaled-down stand-in
 for this design. This cluster runs today, on the same three Proxmox nodes
 (helium, neon, and argon) described below. See
-[development/README.md](../../development/README.md) and
-[development/talos/README.md](../../development/talos/README.md) for its
+[development/README.md](https://github.com/nikpcenicni/Nikflix/blob/main/development/README.md) and
+[development/talos/README.md](https://github.com/nikpcenicni/Nikflix/blob/main/development/talos/README.md) for its
 setup. The target-state design in this document is not built. The
 dedicated per-node SSDs, the `vmbr2` storage bridge, and the six physical
 nodes described below remain unbuilt.
@@ -368,7 +368,7 @@ phase, not before you write this document:
 - **Talos and Kubernetes version pinning.** Not yet chosen for this
   target-state design. As a side reference, the development cluster
   currently pins Talos v1.13.7 (see
-  [development/talos/README.md](../../development/talos/README.md)), but
+  [development/talos/README.md](https://github.com/nikpcenicni/Nikflix/blob/main/development/talos/README.md)), but
   this is not a formal production decision.
 - **Provisioning tooling.** Whether Talos VM creation and config gets its
   own Ansible role, matching the
@@ -376,7 +376,7 @@ phase, not before you write this document:
   or `talosctl` and Terraform drive it directly. The repo still has no
   Ansible role for Talos. On the development cluster, an operator applies
   the machine config by hand with `talosctl` (see
-  [development/talos/README.md](../../development/talos/README.md)).
+  [development/talos/README.md](https://github.com/nikpcenicni/Nikflix/blob/main/development/talos/README.md)).
 - **VLAN 10 versus a dedicated VLAN** for cluster traffic. Currently VLAN
   10 is the choice (see [Networking](#networking)). Revisit this choice
   if traffic volume or isolation needs change.
