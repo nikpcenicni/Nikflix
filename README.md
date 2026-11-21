@@ -98,7 +98,8 @@ network on a different switch:
 | `192.168.50.105` | Interim NAS (NFS for the media stack) |
 
 The [networking reference](https://pcenicni.dev/Nikflix/reference/networking/)
-has the full IP plan, the per-switch port table, and the DNS setup.
+has the full IP plan and the DNS setup. Switch ports and cabling are
+recorded in [`docs/reference/port-map.md`](docs/reference/port-map.md).
 
 ## Secrets
 

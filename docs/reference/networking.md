@@ -106,28 +106,9 @@ graph TB
 
 ### Per-switch port assignments
 
-!!! todo "Record port numbers"
-    The repository records which switch each NIC connects to, but not
-    the exact port numbers. Fill in the **Port** column from the UniFi
-    console (Devices → *switch* → Ports) and keep this table current. In
-    a rebuild, any free port works if you set its native VLAN as listed.
-
-| Switch | Port | Connected device | Native VLAN |
-|---|---|---|---|
-| Cloud Gateway Fiber | WAN | ISP uplink | - |
-| Cloud Gateway Fiber | _record_ | helium `nic0` | 100 |
-| Cloud Gateway Fiber | _record_ | neon `nic0` | 100 |
-| Cloud Gateway Fiber | _record_ | argon `nic0` | 100 |
-| Cloud Gateway Fiber | _record_ | Uplink to Flex 2.5GbE #1 | trunk (all) |
-| Cloud Gateway Fiber | _record_ | Uplink to Flex 2.5GbE #2 | trunk (all) |
-| Flex 2.5GbE #1 | _record_ | Uplink to Cloud Gateway Fiber | trunk (all) |
-| Flex 2.5GbE #1 | _record_ | helium `nic1` | 10 |
-| Flex 2.5GbE #1 | _record_ | neon `nic1` | 10 |
-| Flex 2.5GbE #1 | _record_ | argon `nic1` | 10 |
-| Flex 2.5GbE #2 | _record_ | Uplink to Cloud Gateway Fiber | trunk (all) |
-| Flex 2.5GbE #2 | _record_ | helium `nic2` | 80 |
-| Flex 2.5GbE #2 | _record_ | neon `nic2` | 80 |
-| Flex 2.5GbE #2 | _record_ | argon `nic2` | 80 |
+Switch port numbers, MAC addresses, other devices, and the reconciliation
+of the old June map live on one editable page:
+**[Port and VLAN map](port-map.md)**. Update that page when a cable moves.
 
 When you add `krypton`, `xenon`, or `radon`, cable them the same way:
 `nic0` to a VLAN 100 port, `nic1` to a VLAN 10 port, `nic2` to a VLAN 80

@@ -11,6 +11,12 @@ design write-ups.</p>
 
     VLANs, IP plan, physical port map, DNS, and inbound access.
 
+-   :material-ethernet:{ .lg .middle } **[Port and VLAN map](port-map.md)**
+
+    ---
+
+    Editable worksheet: every switch port, NIC, MAC, and VLAN.
+
 -   :material-file-tree:{ .lg .middle } **[Repository layout](repository.md)**
 
     ---

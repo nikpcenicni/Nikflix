@@ -25,7 +25,7 @@ assumes this step is complete. It does not configure switches.
    to Flex #1, `nic2` (2.5GbE USB) to Flex #2.
 
 4. Record the port numbers in the
-   [per-switch table](../../reference/networking.md#per-switch-port-assignments).
+   [per-switch table](../../reference/port-map.md#per-switch-port-tables).
 
 5. In your DNS server, add a wildcard that points the lab domain at
    Traefik's future address. For Pi-hole v6, add this line to

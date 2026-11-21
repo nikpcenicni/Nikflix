@@ -159,4 +159,4 @@ work.
 - [ ] `ssh -i <saved key> root@192.168.10.10 pvecm status` works
 - [ ] `terraform plan` in `development/terraform/` shows no changes
 - [ ] The NAS has an app backup newer than 7 days for each important app
-- [ ] The per-switch port table on the [networking page](../reference/networking.md#per-switch-port-assignments) matches the UniFi console
+- [ ] The [port map](../reference/port-map.md#per-switch-port-tables) matches the UniFi console
