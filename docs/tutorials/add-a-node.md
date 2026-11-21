@@ -23,7 +23,7 @@ Follow the `.10 / .20 / .30` pattern. In UniFi, reserve outside DHCP:
 | `nic2` 2.5GbE | Flex 2.5GbE #2 | 80 |
 
 Record the port numbers in the
-[port table](../reference/networking.md#per-switch-port-assignments).
+[port table](../reference/port-map.md#per-switch-port-tables).
 
 ## 3. Install Proxmox
 

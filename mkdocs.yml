@@ -129,6 +129,7 @@ nav:
   - Reference:
       - reference/index.md
       - Networking: reference/networking.md
+      - Port and VLAN map: reference/port-map.md
       - Repository layout: reference/repository.md
       - Architecture:
           - Proxmox cluster: reference/architecture/proxmox.md
