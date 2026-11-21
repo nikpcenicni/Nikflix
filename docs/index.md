@@ -13,7 +13,7 @@ Kubernetes, and ArgoCD deploys everything on the cluster from git. These
 docs explain how it works, how to build your own, and how to bring it
 back after a failure.
 
-[Explore the stack :material-arrow-right:](current/index.md){ .md-button .md-button--primary }
+[Explore the stack :material-arrow-right:](explore/index.md){ .md-button .md-button--primary }
 [Build your own](tutorials/build/index.md){ .md-button }
 [Disaster recovery](operations/disaster-recovery.md){ .md-button }
 
@@ -22,7 +22,7 @@ back after a failure.
 <div class="nf-stats" markdown>
 <div class="nf-stat"><b>3</b><span>Proxmox nodes</span></div>
 <div class="nf-stat"><b>6</b><span>Talos VMs</span></div>
-<div class="nf-stat"><b>40</b><span>ArgoCD Applications</span></div>
+<div class="nf-stat"><b>41</b><span>ArgoCD Applications</span></div>
 <div class="nf-stat"><b>3</b><span>Isolated VLANs</span></div>
 <div class="nf-stat"><b>0</b><span>Plaintext secrets in git</span></div>
 </div>
@@ -100,7 +100,7 @@ flowchart LR
         T["3 control plane<br/>3 worker"]
     end
     subgraph git["GitOps"]
-        A["ArgoCD<br/>40 Applications"]
+        A["ArgoCD<br/>41 Applications"]
     end
     net -->|Ansible| pve -->|Terraform + talosctl| k8s
     git -->|syncs| k8s

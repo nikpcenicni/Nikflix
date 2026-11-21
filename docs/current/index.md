@@ -3,6 +3,11 @@
 <p class="lead">What runs in the lab today. Everything here is live on the
 development cluster, <code>dev-noble</code>.</p>
 
+!!! tip "See it as a map"
+    The [interactive stack explorer](../explore/index.md) draws all of
+    this from the repository. Click any node, VM, or app to see its
+    details and connections.
+
 <div class="grid cards" markdown>
 
 -   :material-server:{ .lg .middle } **[Hardware](hardware.md)**
